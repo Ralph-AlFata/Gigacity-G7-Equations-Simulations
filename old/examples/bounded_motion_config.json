@@ -1,0 +1,82 @@
+{
+  "parameter_status": "illustrative_unvalidated_bounds_including_absolute_speed",
+  "seed": 7,
+  "reference_horizon_s": 6.4,
+  "validity_s": 6.4,
+  "anchor_stride_s": 1.0,
+  "warmup_s": 2.0,
+  "history_window_s": 0.8,
+  "min_history_samples": 2,
+  "max_history_gap_s": 0.25,
+  "time_tolerance_s": 0.001,
+  "communication_and_actuation_s": 0.0,
+  "reserve_s": 0.0,
+  "deadline_thresholds_s": [
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.0
+  ],
+  "experiments": [
+    {
+      "name": "illustrative_base",
+      "qbar_mps": 0.5,
+      "rho0_extra_m": 0.2,
+      "eps_position_m": 0.3,
+      "eps_velocity_mps": 0.5,
+      "acceleration_bound_mps2": 2.0,
+      "object_radius_padding_m": 0.1,
+      "injection_position_radius_m": 0.0,
+      "injection_velocity_radius_mps": 0.0
+    },
+    {
+      "name": "zero_growth_diagnostic",
+      "qbar_mps": 0.0,
+      "rho0_extra_m": 0.0,
+      "eps_position_m": 0.0,
+      "eps_velocity_mps": 0.0,
+      "acceleration_bound_mps2": 0.0,
+      "object_radius_padding_m": 0.0,
+      "injection_position_radius_m": 0.0,
+      "injection_velocity_radius_mps": 0.0
+    },
+    {
+      "name": "no_ego_growth_ablation",
+      "qbar_mps": 0.0,
+      "rho0_extra_m": 0.2,
+      "eps_position_m": 0.3,
+      "eps_velocity_mps": 0.5,
+      "acceleration_bound_mps2": 2.0,
+      "object_radius_padding_m": 0.1,
+      "injection_position_radius_m": 0.0,
+      "injection_velocity_radius_mps": 0.0
+    },
+    {
+      "name": "no_acceleration_growth_ablation",
+      "qbar_mps": 0.5,
+      "rho0_extra_m": 0.2,
+      "eps_position_m": 0.3,
+      "eps_velocity_mps": 0.5,
+      "acceleration_bound_mps2": 0.0,
+      "object_radius_padding_m": 0.1,
+      "injection_position_radius_m": 0.0,
+      "injection_velocity_radius_mps": 0.0
+    },
+    {
+      "name": "larger_bounds_stress",
+      "qbar_mps": 1.0,
+      "rho0_extra_m": 0.2,
+      "eps_position_m": 0.6,
+      "eps_velocity_mps": 1.0,
+      "acceleration_bound_mps2": 4.0,
+      "object_radius_padding_m": 0.1,
+      "injection_position_radius_m": 0.0,
+      "injection_velocity_radius_mps": 0.0
+    }
+  ],
+  "history_policy_note": "Endpoint velocity with derived error bound; short/gapped/expired histories use last-position absolute-speed envelope. No track dropped.",
+  "obstacle_input_policy": "bounded_motion",
+  "fallback_speed_bound_mps": 40.0,
+  "fallback_assumption": "Every fallback object center moves at <=40 m/s over the entire elapsed interval from its last observation through the queried horizon. This is an exploratory assumption, not a bound inferred or certified by the dataset."
+}

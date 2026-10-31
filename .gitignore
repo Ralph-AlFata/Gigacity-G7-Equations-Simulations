@@ -1,0 +1,54 @@
+# --- Secrets (Hugging Face token, API keys) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python environment and build output ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# --- NVIDIA PhysicalAI-AV data (license-restricted, large; re-fetch instead) ---
+data/
+
+# --- Runpod inputs/outputs: camera frames, ground-truth trajectories, model outputs ---
+artifacts/
+
+# --- Generated experiment outputs (reproducible from code + data) ---
+results/
+old/results/
+old/demo_run/
+old/my_demo/
+
+# --- Model weights, caches, large media ---
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+.cache/
+hf_cache/
+*.mp4
+*.zip
+*.npz
+*.parquet
