@@ -1,0 +1,27 @@
+# Named feature selections for `horizon-fetch --features`.
+#
+# An entry is any of:
+#   a feature             egomotion, camera_front_wide_120fov (all its members)
+#   feature:member        camera_front_wide_120fov:video
+#   a group               labels, calibration, camera, lidar, radar (the `directory` column of features.csv)
+#   group:member          camera:frame_timestamps (that member of every feature in the group)
+#   another preset        default
+#
+# Groups are resolved against features.csv, so a feature NVIDIA adds later is picked up.
+
+# 3 labels, 6 calibration tables, frame timestamps of all 7 cameras. A few MB per clip.
+default = ["labels", "calibration", "camera:frame_timestamps"]
+
+# Everything scene building (E02) needs. Lidar tells whether an object is observed (T008).
+scene = ["default", "lidar"]
+
+# What NVIDIA's Alpamayo 1.5 loader reads: online egomotion and its 4 default cameras.
+alpamayo = [
+    "egomotion",
+    "camera_cross_left_120fov:video",
+    "camera_front_wide_120fov:video",
+    "camera_cross_right_120fov:video",
+    "camera_front_tele_30fov:video",
+]
+
+videos = ["camera:video"]

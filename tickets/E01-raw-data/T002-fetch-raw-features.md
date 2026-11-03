@@ -2,7 +2,7 @@
 
 **Type:** Task
 **Epic:** E01
-**Status:** todo
+**Status:** review
 **Depends on:** T001
 
 ## Goal
@@ -76,30 +76,54 @@ calibration chunk files are small and get filtered.
 - Lidar is stored exactly as downloaded. Decoding it belongs to T005, not to the fetcher.
 
 ## Subtasks
-- [ ] Project skeleton (package folder, `pyproject.toml` rewritten, test runner)
-- [ ] Load HF token from `.env` without printing it
-- [ ] Feature registry from `features.csv` + presets file
-- [ ] Parquet fetch + filter (calibration)
-- [ ] ZIP member streaming (labels, camera, lidar, radar)
-- [ ] Presence check, dry run with sizes, confirmation threshold
-- [ ] Manifest write/update, `--remove`
-- [ ] CLI, documented in the repo README
-- [ ] Dry run of `scene` for our two clips (report lidar size), then fetch it
+- [x] Project skeleton (package folder, `pyproject.toml` rewritten, test runner)
+- [x] Load HF token from `.env` without printing it
+- [x] Feature registry from `features.csv` + presets file
+- [x] Parquet fetch + filter (calibration)
+- [x] ZIP member streaming (labels, camera, lidar, radar)
+- [x] Presence check, dry run with sizes, confirmation threshold
+- [x] Manifest write/update, `--remove`
+- [x] CLI, documented in the repo README
+- [x] Dry run of `scene` for our two clips (report lidar size), then fetch it
 
 ## Acceptance criteria
-- [ ] Test: filtering a chunk keeps exactly the rows of the clip, unchanged (synthetic chunk).
-- [ ] Test: unknown feature, member or preset gives a clear error with the valid names.
-- [ ] Test: a feature marked absent is skipped and recorded as absent.
-- [ ] Test: re-running does not rewrite unchanged files.
-- [ ] Check: for both clips, stored `egomotion.offline` and `obstacle.offline` are identical to
-      `data/pai_selected_train/<clip>/raw_*.parquet`.
-- [ ] Check: front-wide `frame_timestamps` matches the existing `front_camera_timestamps.parquet`.
-- [ ] Check: fetching `camera_front_wide_120fov:video` for b789fab8 reproduces the existing mp4
+- [x] Test: filtering a chunk keeps exactly the rows of the clip, unchanged (synthetic chunk).
+- [x] Test: unknown feature, member or preset gives a clear error with the valid names.
+- [x] Test: a feature marked absent is skipped and recorded as absent.
+- [x] Test: re-running does not rewrite unchanged files.
+- [x] Check: for both clips, stored `egomotion.offline` and `obstacle.offline` are identical to
+      `data/pai_selected_train/<clip>/raw_*.parquet` (same content; see Outcome for bytes).
+- [x] Check: front-wide `frame_timestamps` matches the existing `front_camera_timestamps.parquet`.
+- [x] Check: fetching `camera_front_wide_120fov:video` for b789fab8 reproduces the existing mp4
       (SHA-256 `9ef5d8b3…090d` from `data/pai_selected_train/video_manifest.json`), then `--remove` it.
-- [ ] Check: `--dry-run --features lidar` on one clip reports a size and downloads nothing.
-- [ ] Check: after fetching `scene`, both clips have `lidar_top_360fov/pointclouds.parquet`, its
+- [x] Check: `--dry-run --features lidar` on one clip reports a size and downloads nothing.
+- [x] Check: after fetching `scene`, both clips have `lidar_top_360fov/pointclouds.parquet`, its
       SHA-256 and size in the manifest, and the manifest lists it as present in `feature_presence`.
-- [ ] Rerun check: not applicable.
+- [x] Rerun check: not applicable.
 
 ## Outcome
-<Filled in when done.>
+Implemented in `horizon_pipeline/raw/` (`registry.py`, `source.py`, `store.py`, `fetch.py`, `cli.py`,
+`presets.toml`), CLI `horizon-fetch`, documented in the repo README. 41 tests pass (`uv run pytest`).
+
+- Presets can name groups (`labels`, `camera:frame_timestamps`, …), which resolve against
+  `features.csv`, so the presets file has no hard-coded list of calibration tables or cameras.
+  `lidar` and `radar` are groups, not presets.
+- The 4 Alpamayo cameras (`alpamayo` preset) are the loader's defaults: cross_left_120fov,
+  front_wide_120fov, cross_right_120fov, front_tele_30fov.
+- **Bytes vs content:** stored `egomotion.offline` / `obstacle.offline` are byte-identical to the
+  ZIP members (checked against the cached chunk ZIPs). The old copies differ in SHA-256 but are
+  equal as DataFrames, because the old pipeline re-wrote them with pandas
+  (`old/horizonlab/dataset.py:228`). Front-wide `frame_timestamps` matches the old file byte for byte.
+- Video check: `camera_front_wide_120fov:video` for b789fab8 has SHA-256 `9ef5d8b3…090d`, then
+  `--remove` deleted it and moved it back to `not_fetched`.
+- **Lidar size:** dry run (no download) reported 352.9 MB (b789fab8) and 317.9 MB (b4d979af).
+  Fetched after confirming with the user: 199 spins per clip, columns `spin_index`,
+  `spin_start_timestamp`, `spin_end_timestamp`, `draco_encoded_pointcloud` (binary). Decoding is T005.
+  The SDK keeps a second copy in `~/.cache/huggingface/hub/subsetcache/` (~670 MB).
+- Calibration tables are indexed by `clip_id` (`vehicle_dimensions`, 1 row), or by
+  (`clip_id`, `sensor_name`) / (`clip_id`, `camera_name`) (`sensor_extrinsics` 8 rows,
+  `camera_intrinsics` 7 rows). Filtering keeps the index.
+- Assumptions confirmed: streaming works for lidar members. Remote member sizes come from the ZIP
+  central directory without downloading the member.
+- `data/raw/` holds the `scene` set for both clips: 17 files each, ~675 MB in total.
+  `tests/test_raw_data_checks.py` re-runs the checks above whenever the data is present.

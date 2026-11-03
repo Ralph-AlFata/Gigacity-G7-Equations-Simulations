@@ -1,7 +1,7 @@
 # E01 — Raw data access layer
 
 **Type:** Epic
-**Status:** todo
+**Status:** in-progress
 
 ## Goal
 A general, on-request data layer for PhysicalAI-AV: any clip, any feature the dataset offers,
@@ -21,7 +21,7 @@ for our current two clips only, but nothing in the code is specific to them.
 | ID | Type | Title | Status |
 |---|---|---|---|
 | T001 | Decision | Data scope for phase 1 | done |
-| T002 | Task | General on-request feature fetcher | todo |
+| T002 | Task | General on-request feature fetcher | review |
 | T003 | Task | Clip catalog: browse and select clips without downloading | todo |
 | T004 | Spike | `egomotion` vs `egomotion.offline` | todo |
 
