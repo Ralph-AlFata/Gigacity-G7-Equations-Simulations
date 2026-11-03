@@ -21,8 +21,8 @@ for our current two clips only, but nothing in the code is specific to them.
 | ID | Type | Title | Status |
 |---|---|---|---|
 | T001 | Decision | Data scope for phase 1 | done |
-| T002 | Task | General on-request feature fetcher | review |
-| T003 | Task | Clip catalog: browse and select clips without downloading | todo |
+| T002 | Task | General on-request feature fetcher | done |
+| T003 | Task | Clip catalog: browse and select clips without downloading | review |
 | T004 | Spike | `egomotion` vs `egomotion.offline` | todo |
 
 ## Exit criteria
