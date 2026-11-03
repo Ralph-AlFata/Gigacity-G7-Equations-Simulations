@@ -45,7 +45,7 @@ read this scene; they never decide which objects count. That decision is made he
 One folder per clip and ego source: `data/scene/<clip_id>/<ego_source>/`.
 
 **`meta.json`**
-- `clip_id`, `ego_source`, `rate_hz` (10), `t0_us` (clip time 0), `n_ticks`
+- `clip_id`, `ego_source`, `rate_hz` (10), `t0_us` (clip time 0 on the dataset clock; T007), `n_ticks`
 - `ego`:
   - vehicle dimensions (length, width, height);
   - rear-axle offset from the rig origin (zero, T006);
@@ -112,8 +112,8 @@ The equations read only rows with `in_scene = true`.
 | ID | Type | Title | Status |
 |---|---|---|---|
 | T005 | Spike | Lidar format: columns, frame, timing, size | done |
-| T006 | Spike | Is the rig origin the rear-axle midpoint? | review |
-| T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | todo |
+| T006 | Spike | Is the rig origin the rear-axle midpoint? | done |
+| T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | review |
 | T008 | Task | Lidar observability and `in_scene` | todo |
 | T009 | Spike | Derived ego motion vs online egomotion | todo |
 | T010 | Task | Stream a scene to Rerun | todo |

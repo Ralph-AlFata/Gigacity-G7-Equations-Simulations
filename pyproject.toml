@@ -20,6 +20,7 @@ dependencies = [
 [project.scripts]
 horizon-fetch = "horizon_pipeline.raw.cli:main"
 horizon-catalog = "horizon_pipeline.raw.catalog_cli:main"
+horizon-scene = "horizon_pipeline.scene.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
