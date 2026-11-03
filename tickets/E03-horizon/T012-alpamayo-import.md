@@ -26,8 +26,9 @@ Alpamayo is not part of this ticket.
 - **Match to a tick.** Each output is matched to the scene tick with the same timestamp, within
   1 ms. An output that matches no tick is an error, never rounded silently.
 - **Frame.** Ego frame at t → world frame, using the scene ego pose at that tick. First confirm
-  which point on the car Alpamayo's trajectory describes (rear axle or rig origin; see T006) and
-  apply the offset if needed.
+  which point on the car Alpamayo's trajectory describes and apply an offset if needed. The rig
+  origin is the rear axle (T006), and Alpamayo is trained on egomotion of the rig origin, so the
+  offset is expected to be zero.
 - **Speed.** Per step, from the difference between consecutive positions.
 - **Step 0.** Its offset from the ego position is stored in `meta.json` as a check value. It should
   be ~0, since the trajectory starts at the ego.
