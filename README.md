@@ -89,6 +89,31 @@ uv run horizon-fetch --clips-file data/clip_lists/eu_night.txt --features defaul
   values (e.g. `radar_config=null`). Conditions combine with AND.
 - Clip lists start with `#` lines recording the command, the dataset revision and the date.
 
+## Building scenes (`horizon-scene`)
+
+Turns a clip's raw labels into a **scene**: every 0.1 s tick, the ego state and every object that
+exists then, all in one world frame and also relative to the ego's rear axle. The schema is in
+[`tickets/E02-scene/README.md`](tickets/E02-scene/README.md).
+
+```sh
+# Both clips, with offline and online ego poses (the H pipeline uses offline; online is for comparison).
+uv run horizon-scene build --clips-file clips_selected_train.txt --ego-source both
+```
+
+Output, per clip and ego source:
+
+```
+data/scene/<clip_id>/<ego_source>/
+  meta.json          grid (t0_us, n_ticks), ego dimensions and footprint, class groups, rules,
+                     SHA-256 of the raw inputs, code version, build report
+  ego.parquet        one row per tick: pose, yaw, derived velocity / acceleration / yaw rate
+  objects.parquet    one row per (tick, track) where the track exists: world pose, size, derived
+                     motion, pose relative to the ego, sighting age; lidar columns empty until T008
+```
+
+It needs `egomotion[.offline]`, `obstacle.offline` and `vehicle_dimensions` in `data/raw/<clip_id>/`
+(the `default` preset). The build stops if two rows of a track less than 20 ms apart disagree.
+
 ## Tests
 
 ```sh

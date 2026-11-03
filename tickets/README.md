@@ -60,8 +60,8 @@ checklist item inside the ticket, not a nested folder.
 | T004 | Spike | `egomotion` vs `egomotion.offline` | E01 | done | T002 |
 | E02 | Epic | Scene building | — | in-progress | E01 |
 | T005 | Spike | Lidar format: columns, frame, timing, size | E02 | done | T002 |
-| T006 | Spike | Is the rig origin the rear-axle midpoint? | E02 | review | T002 |
-| T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | E02 | todo | T002, T006 |
+| T006 | Spike | Is the rig origin the rear-axle midpoint? | E02 | done | T002 |
+| T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | E02 | review | T002, T006 |
 | T008 | Task | Lidar observability and `in_scene` | E02 | todo | T005, T007 |
 | T009 | Spike | Derived ego motion vs online egomotion | E02 | todo | T007 |
 | T010 | Task | Stream a scene to Rerun | E02 | todo | T007 |
