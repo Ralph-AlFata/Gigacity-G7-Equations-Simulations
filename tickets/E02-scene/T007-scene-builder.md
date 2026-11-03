@@ -25,7 +25,8 @@ before anything is resampled.
    last time covered by ego poses. Ticks are never extrapolated past the data.
 
 2. **Ego pose at any time.** Interpolate position linearly and orientation by slerp between the
-   two ego poses around the time. Applied to the rear-axle point (offset from T006).
+   two ego poses around the time. The pose is already the rear-axle point: the rig origin is the
+   rear-axle midpoint on the ground (T006), so there is no offset.
 
 3. **Clean sightings, per track.**
    - Sort each track's rows by time.

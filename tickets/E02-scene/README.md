@@ -23,7 +23,7 @@ read this scene; they never decide which objects count. That decision is made he
 - **Ego source:** `egomotion.offline` for scene geometry (T004: the labels match it in space and
   time). Online `egomotion` scenes can still be built for comparison, but are never mixed with offline.
 - **3D everywhere**, plus planar x, y, yaw for the equations.
-- **Ego reference point:** rear-axle midpoint (to confirm in T006).
+- **Ego reference point:** rear-axle midpoint on the ground, which is the rig origin itself (T006).
 
 ## Scope
 - In scope:
@@ -48,7 +48,7 @@ One folder per clip and ego source: `data/scene/<clip_id>/<ego_source>/`.
 - `clip_id`, `ego_source`, `rate_hz` (10), `t0_us` (clip time 0), `n_ticks`
 - `ego`:
   - vehicle dimensions (length, width, height);
-  - rear-axle offset from the rig origin (from T006);
+  - rear-axle offset from the rig origin (zero, T006);
   - footprint relative to the rear axle.
 - `class_groups`:
   - vehicle: automobile, bus, heavy_truck, trailer;
@@ -111,8 +111,8 @@ The equations read only rows with `in_scene = true`.
 ## Tickets
 | ID | Type | Title | Status |
 |---|---|---|---|
-| T005 | Spike | Lidar format: columns, frame, timing, size | review |
-| T006 | Spike | Is the rig origin the rear-axle midpoint? | todo |
+| T005 | Spike | Lidar format: columns, frame, timing, size | done |
+| T006 | Spike | Is the rig origin the rear-axle midpoint? | review |
 | T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | todo |
 | T008 | Task | Lidar observability and `in_scene` | todo |
 | T009 | Spike | Derived ego motion vs online egomotion | todo |
