@@ -143,7 +143,7 @@ def test_grid_starts_at_clip_time_zero():
 def test_constant_velocity_object_on_an_offset_clock_is_exact(tmp_path):
     center, yaw, v = mover()
     write_clip(tmp_path, {"7": ("automobile", clock(37_000, 2_937_000), center, yaw, (4.0, 1.8, 1.5))})
-    scene = build_scene(tmp_path / CLIP, "offline")
+    scene = build_scene(tmp_path / CLIP, "offline", lidar=False)
     o, e = scene.objects, scene.ego
     t = o["t_s"].to_numpy()
     assert t[0] == pytest.approx(0.1) and t[-1] == pytest.approx(2.9)
@@ -174,7 +174,7 @@ def test_skips_up_to_half_a_second_are_bridged(tmp_path):
     long = clock(0, 1_000_000) + clock(1_600_000, 2_000_000)  # 0.6 s skip
     write_clip(tmp_path, {"short": ("automobile", short, center, yaw, (4, 2, 1.5)),
                           "long": ("automobile", long, center, yaw, (4, 2, 1.5))})  # fmt: skip
-    o = build_scene(tmp_path / CLIP, "offline").objects
+    o = build_scene(tmp_path / CLIP, "offline", lidar=False).objects
     ticks = lambda tr: o.loc[o["track_id"] == tr, "tick"].tolist()  # noqa: E731
     assert ticks("short") == list(range(0, 21))
     assert ticks("long") == list(range(0, 11)) + list(range(16, 21))
@@ -189,7 +189,7 @@ def test_skips_up_to_half_a_second_are_bridged(tmp_path):
 def test_no_rows_outside_a_track_lifetime(tmp_path):
     center, yaw, _ = mover()
     write_clip(tmp_path, {"a": ("person", clock(450_000, 1_250_000), center, yaw, (0.6, 0.6, 1.7))})
-    o = build_scene(tmp_path / CLIP, "offline").objects
+    o = build_scene(tmp_path / CLIP, "offline", lidar=False).objects
     assert o["t_s"].min() >= 0.45 and o["t_s"].max() <= 1.25
     assert o["tick"].tolist() == list(range(5, 13))
 
@@ -197,7 +197,7 @@ def test_no_rows_outside_a_track_lifetime(tmp_path):
 def test_single_tick_track_has_nan_motion_and_unknown_class_is_kept(tmp_path):
     center, yaw, _ = mover()
     write_clip(tmp_path, {"one": ("hovercraft", [1_000_000], center, yaw, (2, 2, 2))})
-    scene = build_scene(tmp_path / CLIP, "offline")
+    scene = build_scene(tmp_path / CLIP, "offline", lidar=False)
     row = scene.objects.iloc[0]
     assert len(scene.objects) == 1 and row["class_group"] == "unknown"
     assert np.isnan(row["vx"]) and np.isnan(row["yaw_rate"])
@@ -212,7 +212,7 @@ def test_consistent_duplicates_are_merged_keeping_the_later_row(tmp_path):
     dup["timestamp_us"] = dup["timestamp_us"] + np.uint64(3_000)  # 3 ms later, 5 cm off
     dup["center_x"] += 0.05
     pd.concat([obs, dup]).to_parquet(d / "obstacle.offline.parquet", index=False)
-    scene = build_scene(d, "offline")
+    scene = build_scene(d, "offline", lidar=False)
     assert scene.report["duplicates_merged"] == 1
     # Tick 5 (0.5 s) now lies before the kept sighting at 0.503 s, so it is interpolated from 0.4 s.
     row = scene.objects.set_index("tick").loc[5]
@@ -232,13 +232,13 @@ def test_inconsistent_duplicates_stop_the_build(tmp_path, column, change):
     dup[column] = change if column == "label_class" else dup[column] + change
     pd.concat([obs, dup]).to_parquet(d / "obstacle.offline.parquet", index=False)
     with pytest.raises(DuplicateError, match="track 7"):
-        build_scene(d, "offline")
+        build_scene(d, "offline", lidar=False)
 
 
 def test_write_scene_layout_and_meta(tmp_path):
     center, yaw, _ = mover()
     write_clip(tmp_path / "raw", {"7": ("automobile", clock(0, 2_000_000), center, yaw, (4, 2, 1.5))})
-    out = write_scene(build_scene(tmp_path / "raw" / CLIP, "online"), tmp_path / "scene")
+    out = write_scene(build_scene(tmp_path / "raw" / CLIP, "online", lidar=False), tmp_path / "scene")
     assert out == tmp_path / "scene" / CLIP / "online"
     meta = json.loads((out / "meta.json").read_text())
     assert meta["ego_source"] == "online" and meta["rate_hz"] == 10 and meta["t0_us"] == 0

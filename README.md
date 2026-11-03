@@ -108,11 +108,14 @@ data/scene/<clip_id>/<ego_source>/
                      SHA-256 of the raw inputs, code version, build report
   ego.parquet        one row per tick: pose, yaw, derived velocity / acceleration / yaw rate
   objects.parquet    one row per (tick, track) where the track exists: world pose, size, derived
-                     motion, pose relative to the ego, sighting age; lidar columns empty until T008
+                     motion, pose relative to the ego, sighting age, lidar points in its box and
+                     in_scene (= observed by the lidar)
 ```
 
-It needs `egomotion[.offline]`, `obstacle.offline` and `vehicle_dimensions` in `data/raw/<clip_id>/`
-(the `default` preset). The build stops if two rows of a track less than 20 ms apart disagree.
+It needs `egomotion[.offline]`, `obstacle.offline`, `vehicle_dimensions`, `sensor_extrinsics.offline`
+and the lidar in `data/raw/<clip_id>/` (the `scene` preset). The lidar step decodes every spin
+(~20 s per clip and ego source); `--no-lidar` skips it and leaves those columns empty. The build
+stops if two rows of a track less than 20 ms apart disagree.
 
 ## Tests
 

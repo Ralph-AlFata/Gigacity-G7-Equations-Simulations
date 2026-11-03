@@ -18,6 +18,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     build.add_argument("--ego-source", choices=[*EGO_SOURCES, "both"], default="offline")
     build.add_argument("--raw", type=Path, default=DEFAULT_RAW)
     build.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    build.add_argument("--no-lidar", action="store_true", help="leave the lidar columns empty (T008)")
     args = parser.parse_args(argv)
     if args.clips_file:
         args.clips += read_clip_list(args.clips_file)
@@ -33,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     for clip in args.clips:
         for source in sources:
             try:
-                scene = build_scene(args.raw / clip, source)
+                scene = build_scene(args.raw / clip, source, lidar=not args.no_lidar)
             except (DuplicateError, FileNotFoundError, ValueError) as e:
                 print(f"FAILED {clip} {source}: {e}", file=sys.stderr)
                 return 1
@@ -49,6 +50,11 @@ def main(argv: list[str] | None = None) -> int:
                 + f"\n  parked tracks: {len(spread)}, position RMS median {spread.median():.3f} m, "
                 f"max {spread.max():.3f} m"
             )
+            if r["lidar"]:
+                print(f"  lidar: {r['lidar']['observed_share'] * 100:.1f}% of object rows observed; "
+                      f"crossing within {r['lidar']['lidar_dt_s_max_abs'] * 1e3:.0f} ms of the tick")
+                for key, v in r["lidar"]["by_class_and_distance"].items():
+                    print(f"    {key:<18} {v['share'] * 100:5.1f}% of {v['rows']}")
     return 0
 
 

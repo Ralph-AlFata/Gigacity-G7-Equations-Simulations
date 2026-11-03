@@ -55,8 +55,8 @@ One folder per clip and ego source: `data/scene/<clip_id>/<ego_source>/`.
   - vru: person, rider, stroller, animal;
   - static: protruding_object;
   - unknown: anything else.
-- `rules`: `gap_bridge_s` (0.5), `dedup_s` (0.020), `lidar_min_points`, `lidar_box_margin_m`,
-  `history_s` (1.6)
+- `rules`: `gap_bridge_s` (0.5), `dedup_s` (0.020), `lidar_min_points` (5), `lidar_box_margin_m` (0.2),
+  `ground_clearance_m` (0.2), `history_s` (1.6)
 - `inputs`: SHA-256 of every raw file used (from `data/raw/manifest.json`), code version.
 
 **`ego.parquet`**: one row per tick.
@@ -94,9 +94,11 @@ but is not observed are kept, with `in_scene = false`, so we can see why it was 
 | `distance` | m | planar center-to-center distance from the ego rear axle |
 | `last_sighting_age_s` | s | time since the last sighting at or before this tick |
 | `gap_s` | s | 0 if bracketed by normal sightings, else the length of the bridged skip |
-| `lidar_points` | int | lidar points inside the box (with margin) in the spin nearest this tick |
+| `lidar_points` | int | lidar points inside the box (with margin, above the ground band), from the spin whose sweep crossed the object nearest this tick, with the box placed at that crossing time (T008) |
 | `observed` | bool | lidar_points ≥ lidar_min_points |
 | `in_scene` | bool | exists (always true for a row) AND observed |
+| `lidar_spin` | int | the spin used for `lidar_points` |
+| `lidar_dt_s` | s | that spin's crossing time minus the tick (within ±0.05 s except at the clip ends) |
 
 The equations read only rows with `in_scene = true`.
 
@@ -113,8 +115,8 @@ The equations read only rows with `in_scene = true`.
 |---|---|---|---|
 | T005 | Spike | Lidar format: columns, frame, timing, size | done |
 | T006 | Spike | Is the rig origin the rear-axle midpoint? | done |
-| T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | review |
-| T008 | Task | Lidar observability and `in_scene` | todo |
+| T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | done |
+| T008 | Task | Lidar observability and `in_scene` | review |
 | T009 | Spike | Derived ego motion vs online egomotion | todo |
 | T010 | Task | Stream a scene to Rerun | todo |
 
