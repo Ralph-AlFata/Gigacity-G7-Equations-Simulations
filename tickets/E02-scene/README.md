@@ -1,7 +1,7 @@
 # E02 — Scene building
 
 **Type:** Epic
-**Status:** todo
+**Status:** in-progress
 **Depends on:** E01
 
 ## Goal
@@ -111,7 +111,7 @@ The equations read only rows with `in_scene = true`.
 ## Tickets
 | ID | Type | Title | Status |
 |---|---|---|---|
-| T005 | Spike | Lidar format: columns, frame, timing, size | todo |
+| T005 | Spike | Lidar format: columns, frame, timing, size | review |
 | T006 | Spike | Is the rig origin the rear-axle midpoint? | todo |
 | T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | todo |
 | T008 | Task | Lidar observability and `in_scene` | todo |
