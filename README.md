@@ -60,6 +60,35 @@ data/raw/
 ZIP members are streamed one at a time through the `physical_ai_av` SDK, so a chunk ZIP is never
 downloaded whole. The SDK also keeps the extracted member in `~/.cache/huggingface/hub/subsetcache/`.
 
+## Browsing clips (`horizon-catalog`)
+
+Answers "which clips exist and what do they have?" from the dataset's index files only
+(`clip_index`, `metadata/feature_presence`, `metadata/data_collection`). It never downloads clip data.
+
+```sh
+# Clip count, coverage per group and feature, and every metadata column with its values.
+uv run horizon-catalog summary
+
+# Chunk, metadata, and per feature: present in the dataset, and what is stored in data/raw/.
+uv run horizon-catalog show b789fab8-41f1-4cf3-b7f8-a8e94939f67d
+
+# 50 random clips (reproducible with --seed) that have everything `scene` needs, recorded in
+# Germany or France at night, written to data/clip_lists/eu_night.txt.
+uv run horizon-catalog select --require scene \
+    --where country=Germany,France "hour_of_day>=20" \
+    --limit 50 --seed 0 --name eu_night
+
+# ...which the fetcher takes as is.
+uv run horizon-fetch --clips-file data/clip_lists/eu_night.txt --features default --dry-run
+```
+
+- `--require` takes the same selections as `horizon-fetch --features`. A clip qualifies when it has
+  every feature they name.
+- `--where` takes `column<op>value` with `=`, `!=`, `<`, `<=`, `>`, `>=` on any metadata column
+  that `summary` lists. With `=` or `!=` the value may be a comma list, and `null` matches missing
+  values (e.g. `radar_config=null`). Conditions combine with AND.
+- Clip lists start with `#` lines recording the command, the dataset revision and the date.
+
 ## Tests
 
 ```sh

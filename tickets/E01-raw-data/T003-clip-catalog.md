@@ -2,7 +2,7 @@
 
 **Type:** Task
 **Epic:** E01
-**Status:** todo
+**Status:** review
 **Depends on:** T002
 
 ## Goal
@@ -28,16 +28,39 @@ and produce clip lists that T002 can fetch. This is how we pick clips when we sc
 - The exact metadata columns available for filtering are read from the files, not assumed.
 
 ## Subtasks
-- [ ] Load index files through the SDK cache
-- [ ] `summary`, `show`, `select`
-- [ ] Document in the repo README
+- [x] Load index files through the SDK cache
+- [x] `summary`, `show`, `select`
+- [x] Document in the repo README
 
 ## Acceptance criteria
-- [ ] Test: `select` with a fixed seed returns the same list twice; every returned clip has the
+- [x] Test: `select` with a fixed seed returns the same list twice; every returned clip has the
       required features.
-- [ ] Check: `show` for our two clips gives chunks 262 and 329 and all features present except
+- [x] Check: `show` for our two clips gives chunks 262 and 329 and all features present except
       radar.
-- [ ] Rerun check: not applicable.
+- [x] Rerun check: not applicable.
 
 ## Outcome
-<Filled in when done.>
+Implemented in `horizon_pipeline/raw/catalog.py` (logic) and `catalog_cli.py`, CLI
+`horizon-catalog summary | show | select`, documented in the repo README. 13 new tests (57 in total).
+
+- **Index only:** the catalog loads the same index files as the fetcher through the SDK cache
+  (`features.csv`, `clip_index`, `feature_presence`, `data_collection`, plus `splits/default`,
+  which the SDK attaches as a `split` column). Nothing else is read. `summary` takes about 2 s.
+- **Metadata columns found** (306,152 clips, 3,146 chunks): `clip_is_valid` (all true), `chunk`,
+  `split` (default split: train / val / test), `country` (25), `month`, `hour_of_day`,
+  `platform_class` (hyperion_8, hyperion_8.1), `radar_config` (low / med / high, missing for 47.5%).
+  Filters accept whichever columns the files have.
+- **Coverage:** labels, offline calibration and lidar 97.4%; online calibration, egomotion and
+  cameras 100%. Radar: 0% of clips have all 19 sensors and 52.5% have at least one.
+  `radar_config` fully determines the set (checked by cross-tab on all clips): `null` → no radar
+  (145,391 clips), `low` → the 9 `*_srr_0` sensors (87,197), `med` → 8 sensors (`*_srr_3`,
+  `*_mrr_2`, `lrr_1`; 50,747), `high` → those 8 plus `side_left/right_srr_3` (22,817). So
+  `--where radar_config=low` is the simple way to select radar clips.
+- `--require` reuses the fetcher's selection syntax (features, groups, presets), so
+  `--require scene` means "has everything `horizon-fetch --features scene` would fetch".
+- `--limit` / `--seed`: a pandas sample with `random_state=seed`, returned in index order.
+- Check: `show` for our two clips gives chunks 262 and 329, everything present except the 19
+  radars, and every `scene` item stored.
+- Under the SDK's default split our clips are `val` (b789fab8) and `test` (b4d979af), although
+  `clips_selected_train.txt` was drawn from `alpamayo_aligned` / train. Splits are ignored (T001),
+  so this only matters for the file name.
