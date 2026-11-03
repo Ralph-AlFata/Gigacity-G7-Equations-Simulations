@@ -17,8 +17,12 @@ choices: which ego poses to use, which cameras, which clips, and which split.
 - `egomotion.offline` is post-processed and exists for 97.4% of clips. Our existing copy is 10 Hz
   starting at 0, while NVIDIA's docs describe egomotion as ~100 Hz absolute timestamps.
 
-**Decision:** keep both, and build every downstream step so it can run on either.
-**Revisit (T004):** we do not yet know how the two differ (rate, smoothness, offsets, and which
+**Decision (updated 2026-11-03 after T004):** scene geometry uses `egomotion.offline`; Alpamayo's
+input uses online `egomotion`. The obstacle labels match offline in space and time, while online
+is a different solution with a 40–50 ms clock offset (evidence in T004). The path level
+`<ego_source>` stays, so an online scene can still be built for comparison.
+**Original decision:** keep both, and build every downstream step so it can run on either.
+**Revisit (T004, done):** we do not yet know how the two differ (rate, smoothness, offsets, and which
 one the obstacle labels were placed with). Choosing blindly could put obstacles in a slightly
 wrong place relative to the ego, which directly biases H. Decide after comparing them on real data.
 
@@ -48,5 +52,5 @@ in the labels **and** the lidar hits them (E02, T008), so lidar is required inpu
 Radar stays out (absent for our two clips, ~25% coverage overall).
 
 ## Consequences
-- Downstream code must take the ego source (`online` / `offline`) as a parameter until T004 closes.
+- Downstream code keeps the ego source as a parameter, defaulting to `offline` (T004).
 - Statistics from two clips describe these two scenes only, not driving in general.
