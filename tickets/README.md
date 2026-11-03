@@ -53,9 +53,9 @@ checklist item inside the ticket, not a nested folder.
 
 | ID | Type | Title | Epic | Status | Depends on |
 |---|---|---|---|---|---|
-| E01 | Epic | Raw data access layer | — | todo | none |
+| E01 | Epic | Raw data access layer | — | in-progress | none |
 | T001 | Decision | Data scope for phase 1 | E01 | done | none |
-| T002 | Task | General on-request feature fetcher | E01 | todo | T001 |
+| T002 | Task | General on-request feature fetcher | E01 | review | T001 |
 | T003 | Task | Clip catalog: browse and select clips without downloading | E01 | todo | T002 |
 | T004 | Spike | `egomotion` vs `egomotion.offline` | E01 | todo | T002 |
 | E02 | Epic | Scene building | — | todo | E01 |
