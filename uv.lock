@@ -24,6 +24,8 @@ dependencies = [
     { name = "pandas" },
     { name = "physical-ai-av" },
     { name = "pyarrow" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 
 [package.dev-dependencies]
@@ -38,6 +40,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.1" },
     { name = "physical-ai-av", specifier = ">=0.2.3" },
     { name = "pyarrow", specifier = ">=15" },
+    { name = "scipy", specifier = ">=1.12" },
 ]
 
 [package.metadata.requires-dev]

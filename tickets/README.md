@@ -56,8 +56,8 @@ checklist item inside the ticket, not a nested folder.
 | E01 | Epic | Raw data access layer | — | in-progress | none |
 | T001 | Decision | Data scope for phase 1 | E01 | done | none |
 | T002 | Task | General on-request feature fetcher | E01 | done | T001 |
-| T003 | Task | Clip catalog: browse and select clips without downloading | E01 | review | T002 |
-| T004 | Spike | `egomotion` vs `egomotion.offline` | E01 | todo | T002 |
+| T003 | Task | Clip catalog: browse and select clips without downloading | E01 | done | T002 |
+| T004 | Spike | `egomotion` vs `egomotion.offline` | E01 | review | T002 |
 | E02 | Epic | Scene building | — | todo | E01 |
 | T005 | Spike | Lidar format: columns, frame, timing, size | E02 | todo | T002 |
 | T006 | Spike | Is the rig origin the rear-axle midpoint? | E02 | todo | T002 |

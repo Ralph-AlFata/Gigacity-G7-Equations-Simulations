@@ -68,8 +68,8 @@ before anything is resampled.
 10. **`has_history`** = t_s ≥ `history_s` (1.6 s), on the ego table.
 
 ## Assumptions
-- Both ego sources cover the whole clip. T004 will check this; if not, the grid is limited to the
-  covered part.
+- Both ego sources cover the whole clip. Checked in T004: offline covers 0–20 s and online's dense
+  part covers −0.19–20.2 s (beyond that, online is a sparse tail to ignore).
 - Label `size_x, size_y, size_z` are length, width, height along the box's own x, y, z axes.
 - Linear interpolation over 0.1–0.5 s is accurate enough. The Rerun check below will show if it
   is not.
@@ -87,7 +87,8 @@ before anything is resampled.
 - [ ] Test: a skip of 0.4 s is bridged; a skip of 0.6 s makes the object not exist in between.
 - [ ] Test: duplicate rows that fail the consistency checks stop the build.
 - [ ] Test: no object row before its first or after its last sighting.
-- [ ] Check: parked objects stay still in the world frame (spread < 0.5 m), with both ego sources.
+- [ ] Check: parked objects stay still in the world frame (spread < 0.5 m) with offline poses
+      (T004 floor: median RMS 0.16–0.21 m).
 - [ ] Rerun check (after T010): boxes move smoothly; parked cars stay still; ego footprint sits
       at the right place relative to the lane.
 

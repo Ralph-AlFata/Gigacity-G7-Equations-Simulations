@@ -11,7 +11,7 @@ each reference source?
 
 ## Setup
 - **Clips:** b789fab8, b4d979af.
-- **Ego source:** both, reported separately until T004 decides.
+- **Ego source:** `egomotion.offline` (T004).
 - **References:** recorded path and Alpamayo, reported separately, never pooled.
 - **Config:** `configs/horizon.yaml` as committed; its SHA-256 is recorded.
 

@@ -20,8 +20,8 @@ read this scene; they never decide which objects count. That decision is made he
   needs every object present at a tick, not who it was before.
 - **Ground truth:** offline labels are treated as truth (T001). Positions between sightings are
   interpolated, even though that uses a sighting up to ~0.1 s in the future.
-- **Both ego sources** (`egomotion`, `egomotion.offline`) produce separate scenes until T004
-  decides.
+- **Ego source:** `egomotion.offline` for scene geometry (T004: the labels match it in space and
+  time). Online `egomotion` scenes can still be built for comparison, but are never mixed with offline.
 - **3D everywhere**, plus planar x, y, yaw for the equations.
 - **Ego reference point:** rear-axle midpoint (to confirm in T006).
 
