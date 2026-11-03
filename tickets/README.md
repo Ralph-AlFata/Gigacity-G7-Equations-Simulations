@@ -57,9 +57,9 @@ checklist item inside the ticket, not a nested folder.
 | T001 | Decision | Data scope for phase 1 | E01 | done | none |
 | T002 | Task | General on-request feature fetcher | E01 | done | T001 |
 | T003 | Task | Clip catalog: browse and select clips without downloading | E01 | done | T002 |
-| T004 | Spike | `egomotion` vs `egomotion.offline` | E01 | review | T002 |
-| E02 | Epic | Scene building | — | todo | E01 |
-| T005 | Spike | Lidar format: columns, frame, timing, size | E02 | todo | T002 |
+| T004 | Spike | `egomotion` vs `egomotion.offline` | E01 | done | T002 |
+| E02 | Epic | Scene building | — | in-progress | E01 |
+| T005 | Spike | Lidar format: columns, frame, timing, size | E02 | review | T002 |
 | T006 | Spike | Is the rig origin the rear-axle midpoint? | E02 | todo | T002 |
 | T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | E02 | todo | T002, T006 |
 | T008 | Task | Lidar observability and `in_scene` | E02 | todo | T005, T007 |

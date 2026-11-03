@@ -23,7 +23,7 @@ for our current two clips only, but nothing in the code is specific to them.
 | T001 | Decision | Data scope for phase 1 | done |
 | T002 | Task | General on-request feature fetcher | done |
 | T003 | Task | Clip catalog: browse and select clips without downloading | done |
-| T004 | Spike | `egomotion` vs `egomotion.offline` | review |
+| T004 | Spike | `egomotion` vs `egomotion.offline` | done |
 
 ## Exit criteria
 - One command fetches any feature (or member) for any clip list, e.g. our two clips' `scene` set,
