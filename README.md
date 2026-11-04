@@ -142,6 +142,8 @@ uv run rerun artifacts/scene/b789fab8.rrd
 - **Cameras:** `--cameras` picks the cameras (none for 3D only). `--all-frames` shows all 30 Hz
   instead of the frame nearest each tick.
 - **Ego sources:** `--compare` adds the other ego source's box and path in red.
+- **Labels and distance:** labels show when you select a box. `--labels` draws them all.
+  `--fade-beyond 30` fades objects more than 30 m from the ego.
 
 ## Tests
 

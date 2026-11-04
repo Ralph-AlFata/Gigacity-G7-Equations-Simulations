@@ -179,7 +179,7 @@ What you see, all on one timeline (`clip_time`, play, pause and scrub):
 
 - **Box colors:** vehicles are blue, VRUs orange and static objects green when the object is
   `in_scene`. Gray means it exists but the lidar does not see it. Clicking a box shows its label:
-  track ID, class, speed and lidar points.
+  track ID, class, speed and lidar points. `--labels` draws all labels at once.
 - **Drawing boxes on the video:**
   - Each box is moved to the video frame's own time (position linear, rotation slerp), then from
     world to rig to camera.
@@ -197,6 +197,8 @@ What you see, all on one timeline (`clip_time`, play, pause and scrub):
   | `--cameras` | picks cameras (`--cameras` with no name gives 3D only) |
   | `--lidar-every N` | changes how much lidar is drawn |
   | `--no-lidar` | leaves the lidar out |
+  | `--labels` | draws every box's label (by default, shown when a box is selected) |
+  | `--fade-beyond M` | fades objects more than M metres from the ego (display only; the scene is unchanged) |
 
 - **Cost:** a saved recording is ~150–250 MB and takes 25–55 s. Most of that is lidar.
 

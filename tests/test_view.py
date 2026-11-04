@@ -14,7 +14,7 @@ from scipy.spatial.transform import Rotation
 
 from horizon_pipeline.scene.build import build_scene, write_scene
 from horizon_pipeline.scene.camera import Camera, FTheta
-from horizon_pipeline.scene.view import ViewOptions, box_strips, log_scene, state_at
+from horizon_pipeline.scene.view import CLASS_COLORS, FAR_ALPHA, UNSEEN_COLOR, ViewOptions, box_strips, log_scene, object_color, state_at
 from test_scene import CLIP, clock, mover, write_clip
 
 # The front-wide camera of b789fab8 (camera_intrinsics.offline).
@@ -96,6 +96,17 @@ def test_box_crossing_the_field_of_view_is_cut_not_wrapped():
     assert 0 < len(strips)
     pts = np.concatenate(strips)
     assert (pts[:, 0] > FRONT_WIDE["principal_point"][0]).all()  # all on the right half (rig -y)
+
+
+def test_colors_fade_beyond_the_chosen_distance():
+    near, far = box_row([5, 0, 0]).assign(distance=8.0), box_row([50, 0, 0]).assign(distance=45.0)
+    unseen_far = box_row([50, 0, 0], in_scene=False).assign(distance=45.0)
+    color = lambda df, fade: object_color(next(df.itertuples()), fade)  # noqa: E731
+    assert color(near, 30.0) == color(far, None) == CLASS_COLORS["vehicle"]
+    assert color(far, 30.0) == (*CLASS_COLORS["vehicle"], FAR_ALPHA)
+    assert color(unseen_far, 30.0) == (*UNSEEN_COLOR[:3], FAR_ALPHA)
+    _, colors, _ = box_strips(front_camera(), np.zeros(3), Rotation.identity(), box_row(CAM_XYZ + [40.0, 0, 0]).assign(distance=41.7), 1.0, 30.0)
+    assert {c[3] for c in colors} == {FAR_ALPHA}
 
 
 # ---------------------------------------------------------------- between ticks

@@ -7,7 +7,8 @@ Reads only the scene files, plus the raw lidar, videos and calibration for displ
     world/ego_path                the whole ego path (static)
     world/ego_<source>            with --compare: the other ego source's box and path
     world/obstacles/<track_id>    one box per existing object; colored by class group when in_scene,
-                                  gray and faded when it exists but the lidar does not see it
+                                  gray and faded when it exists but the lidar does not see it, and
+                                  faded beyond `fade_beyond_m` if set; labels shown on selection
     world/lidar                   the spin nearest each tick, placed point by point (T008)
     cameras/<camera>/image        video frames on the same timeline
     cameras/<camera>/boxes        the same boxes, projected into that camera
@@ -33,6 +34,7 @@ from horizon_pipeline.scene.lidar import POINTCLOUDS, SpinReader, lidar_extrinsi
 TIMELINE = "clip_time"
 CLASS_COLORS = {"vehicle": (60, 140, 255), "vru": (255, 160, 20), "static": (40, 200, 120), "unknown": (220, 60, 220)}
 UNSEEN_COLOR = (150, 150, 150, 90)  # exists, but the lidar does not see it
+FAR_ALPHA = 50  # objects beyond `fade_beyond_m`
 EGO_COLOR = (255, 255, 255)
 COMPARE_COLOR = (255, 60, 60)
 SIZE = ["length", "width", "height"]
@@ -49,6 +51,8 @@ class ViewOptions:
     all_frames: bool = False  # every video frame (30 Hz) instead of the one nearest each tick
     image_scale: float = 0.5
     compare: bool = False  # also draw the other ego source's box and path
+    labels: bool = False  # draw every box's label (otherwise shown when a box is selected)
+    fade_beyond_m: float | None = None  # fade objects farther than this from the ego rear axle
 
 
 def load_scene(scene_dir: Path) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
@@ -61,10 +65,14 @@ def clip_time(rec: rr.RecordingStream, t_s: float) -> None:
     rec.set_time(TIMELINE, duration=float(t_s))
 
 
-def object_color(row) -> tuple:
-    """Class color when in the scene, or when the scene was built without lidar (`in_scene` empty)."""
+def object_color(row, fade_beyond_m: float | None = None) -> tuple:
+    """Class color when in the scene, or when the scene was built without lidar (`in_scene` empty);
+    faded when farther than `fade_beyond_m`."""
     seen = pd.isna(row.in_scene) or bool(row.in_scene)
-    return CLASS_COLORS.get(row.class_group, CLASS_COLORS["unknown"]) if seen else UNSEEN_COLOR
+    color = CLASS_COLORS.get(row.class_group, CLASS_COLORS["unknown"]) if seen else UNSEEN_COLOR
+    if fade_beyond_m is not None and row.distance > fade_beyond_m:
+        return (*color[:3], FAR_ALPHA)
+    return color
 
 
 def object_label(row) -> str:
@@ -88,7 +96,7 @@ def log_ego(rec: rr.RecordingStream, meta: dict, ego: pd.DataFrame, path: str = 
         rec.log(path, rr.Transform3D(translation=[row.x, row.y, row.z], quaternion=[row.qx, row.qy, row.qz, row.qw]))
 
 
-def log_objects(rec: rr.RecordingStream, objects: pd.DataFrame, ticks: pd.Series) -> None:
+def log_objects(rec: rr.RecordingStream, objects: pd.DataFrame, ticks: pd.Series, opts: "ViewOptions") -> None:
     """One entity per track, cleared at ticks where the track does not exist."""
     by_tick = dict(tuple(objects.groupby("tick")))
     alive: set[str] = set()
@@ -104,8 +112,9 @@ def log_objects(rec: rr.RecordingStream, objects: pd.DataFrame, ticks: pd.Series
                     centers=[[row.x, row.y, row.z]],
                     sizes=[[row.length, row.width, row.height]],
                     quaternions=[[row.qx, row.qy, row.qz, row.qw]],
-                    colors=[object_color(row)],
+                    colors=[object_color(row, opts.fade_beyond_m)],
                     labels=[object_label(row)],
+                    show_labels=opts.labels,
                 ),
             )
         alive = set(rows["track_id"])
@@ -161,7 +170,7 @@ def state_at(ego: pd.DataFrame, objects: pd.DataFrame, t_s: float):
     return ego_xyz, ego_rot, boxes.reset_index()
 
 
-def box_strips(cam: Camera, ego_xyz, ego_rot, boxes: pd.DataFrame, scale: float):
+def box_strips(cam: Camera, ego_xyz, ego_rot, boxes: pd.DataFrame, scale: float, fade_beyond_m: float | None = None):
     """Projected box edges as 2D line strips, cut where they leave the camera's field of view."""
     strips, colors, labels = [], [], []
     t = np.linspace(0, 1, EDGE_SAMPLES)[:, None]
@@ -179,7 +188,7 @@ def box_strips(cam: Camera, ego_xyz, ego_rot, boxes: pd.DataFrame, scale: float)
             for run in np.split(np.arange(EDGE_SAMPLES), np.flatnonzero(np.diff(ok[sl].astype(int))) + 1):
                 if ok[sl][run[0]] and len(run) > 1:
                     strips.append(uv[sl][run])
-                    colors.append(object_color(row))
+                    colors.append(object_color(row, fade_beyond_m))
                     labels.append(None if drawn else str(row.track_id))
                     drawn = True
     return strips, colors, labels
@@ -197,8 +206,9 @@ def log_camera(rec: rr.RecordingStream, cam: Camera, t0_us: int, ego: pd.DataFra
             continue
         clip_time(rec, frame_s[i])
         rec.log(f"cameras/{cam.name}/image", rr.Image(image).compress(jpeg_quality=80))
-        strips, colors, labels = box_strips(cam, *state_at(ego, objects, frame_s[i]), opts.image_scale)
-        rec.log(f"cameras/{cam.name}/boxes", rr.LineStrips2D(strips, colors=colors, labels=labels, radii=[1.0]) if strips else rr.Clear(recursive=False))
+        strips, colors, labels = box_strips(cam, *state_at(ego, objects, frame_s[i]), opts.image_scale, opts.fade_beyond_m)
+        boxes = rr.LineStrips2D(strips, colors=colors, labels=labels, show_labels=opts.labels, radii=[1.0])
+        rec.log(f"cameras/{cam.name}/boxes", boxes if strips else rr.Clear(recursive=False))
 
 
 # ---------------------------------------------------------------- layout and entry point
@@ -226,7 +236,7 @@ def log_scene(rec: rr.RecordingStream, scene_dir: Path, clip_dir: Path, opts: Vi
         other = next(s for s in ("offline", "online") if s != meta["ego_source"])
         other_meta, other_ego, _ = load_scene(Path(scene_dir).parent / other)
         log_ego(rec, other_meta, other_ego, path=f"world/ego_{other}", color=COMPARE_COLOR)
-    log_objects(rec, objects, ego["t_s"])
+    log_objects(rec, objects, ego["t_s"], opts)
     if opts.lidar:
         log_lidar(rec, clip_dir, meta["ego_source"], meta["t0_us"], ego["t_s"], opts.lidar_every)
     for name in opts.cameras:

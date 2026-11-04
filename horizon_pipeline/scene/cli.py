@@ -33,6 +33,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     view.add_argument("--all-frames", action="store_true", help="every video frame (30 Hz), not only the one nearest each tick")
     view.add_argument("--no-lidar", action="store_true", help="leave out the lidar points")
     view.add_argument("--lidar-every", type=int, default=ViewOptions.lidar_every, help="keep every n-th lidar point (default 10)")
+    view.add_argument("--labels", action="store_true", help="draw every box's label (default: shown when a box is selected)")
+    view.add_argument("--fade-beyond", type=float, metavar="M", help="fade objects farther than M metres from the ego")
     view.add_argument("--save", type=Path, metavar="FILE.rrd", help="write a recording instead of opening the viewer")
     view.add_argument("--raw", type=Path, default=DEFAULT_RAW)
     view.add_argument("--scenes", type=Path, default=DEFAULT_OUT)
@@ -64,7 +66,8 @@ def view(args: argparse.Namespace) -> int:
               + " ".join(f"{c}:video" for c in missing) + "`, or pick --cameras", file=sys.stderr)
         return 1
     opts = ViewOptions(lidar=not args.no_lidar, lidar_every=args.lidar_every, cameras=args.cameras,
-                       all_frames=args.all_frames, compare=args.compare)  # fmt: skip
+                       all_frames=args.all_frames, compare=args.compare, labels=args.labels,
+                       fade_beyond_m=args.fade_beyond)  # fmt: skip
     rec = rr.RecordingStream("horizon-scene", recording_id=f"{args.clip}-{args.ego_source}")
     if args.save:
         args.save.parent.mkdir(parents=True, exist_ok=True)

@@ -26,7 +26,9 @@ car actually saw.
 - `world/ego_path`: the whole ego path.
 - `world/obstacles/<track_id>`: a 3D box for every existing object.
   - Colored by `class_group` when `in_scene`; gray and faded when it exists but is not observed.
-  - The label shows track ID, class, speed and lidar point count.
+  - The label shows track ID, class, speed and lidar point count. It appears when a box is
+    selected; `--labels` draws all of them.
+  - `--fade-beyond M` fades objects more than M m from the ego, for display only.
   - Cleared at ticks where the track does not exist.
 - `world/lidar`: the spin whose middle is nearest each tick. Each point is placed with the ego pose
   at its own time, as T008 counts them, and thinned to every 10th point by default.
