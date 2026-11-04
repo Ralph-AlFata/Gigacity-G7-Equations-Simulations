@@ -45,6 +45,7 @@ class Rules:
     dedup_offset_per_m: float = 0.005  # ... plus this much per metre of range (T020)
     dedup_size_tol_m: float = 1e-3
     gap_report_s: float = 0.15  # gap_s is reported only above this (normal spacing is 0.1 s)
+    accel_span_s: float = 0.4  # acceleration = change of velocity over this much past (T009)
     history_s: float = 1.6  # Alpamayo needs this much past input
 
 
@@ -226,19 +227,27 @@ def segments(tick: np.ndarray) -> np.ndarray:
     return np.concatenate([[0], np.cumsum(np.diff(tick) != 1)])
 
 
-def derive_motion(xyz: np.ndarray, yaw: np.ndarray, run: np.ndarray) -> dict:
-    """Step 7: central differences over +-0.1 s, one-sided at the ends of each run of ticks; NaN for
-    a run of one tick. Returns velocity, acceleration (world frame) and yaw rate."""
+def derive_motion(xyz: np.ndarray, yaw: np.ndarray, run: np.ndarray, rules: Rules) -> dict:
+    """Step 7, causal (T009): a value at a tick uses only that tick and earlier ticks of the same run,
+    as a car would know them live.
+
+    Velocity and yaw rate are backward differences over one tick (0.1 s). Acceleration is the change
+    of velocity over the last `accel_span_s`, over the run's whole velocity history while that is
+    shorter. NaN where nothing earlier exists: velocity and yaw rate at a run's first tick,
+    acceleration at its first two. Returns velocity, acceleration (world frame) and yaw rate."""
     vel = np.full_like(xyz, np.nan)
     acc = np.full_like(xyz, np.nan)
     yaw_rate = np.full(len(yaw), np.nan)
+    span = round(rules.accel_span_s / DT_S)
     for r in np.unique(run):
-        m = run == r
-        if m.sum() < 2:
+        idx = np.flatnonzero(run == r)
+        if len(idx) < 2:
             continue
-        vel[m] = np.gradient(xyz[m], DT_S, axis=0)
-        acc[m] = np.gradient(vel[m], DT_S, axis=0)
-        yaw_rate[m] = np.gradient(np.unwrap(yaw[m]), DT_S)
+        vel[idx[1:]] = np.diff(xyz[idx], axis=0) / DT_S
+        yaw_rate[idx[1:]] = np.diff(np.unwrap(yaw[idx])) / DT_S
+        k = np.arange(2, len(idx))  # position within the run; velocity exists from k = 1
+        j = np.maximum(1, k - span)
+        acc[idx[k]] = (vel[idx[k]] - vel[idx[j]]) / ((k - j)[:, None] * DT_S)
     return {"vel": vel, "acc": acc, "yaw_rate": yaw_rate}
 
 
@@ -252,7 +261,7 @@ def class_group(label_class: str) -> str:
 def ego_table(poses: Poses, ticks: np.ndarray, t0_us: int, rules: Rules) -> tuple[pd.DataFrame, np.ndarray, Rotation]:
     xyz, rot = poses.at(ticks)
     yaw = np.unwrap(yaw_of(rot))
-    motion = derive_motion(xyz, yaw, np.zeros(len(ticks), int))
+    motion = derive_motion(xyz, yaw, np.zeros(len(ticks), int), rules)
     acc_body = rot.inv().apply(motion["acc"])
     t_s = (ticks - t0_us) / 1e6
     ego = pd.DataFrame({"tick": np.arange(len(ticks)), "t_s": t_s, "timestamp_us": ticks})
@@ -287,7 +296,7 @@ def objects_table(
             continue
         tick = (state["timestamp_us"] - ticks[0]) // TICK_US
         yaw = yaw_of(state["rot"])
-        motion = derive_motion(state["xyz"], yaw, segments(tick))
+        motion = derive_motion(state["xyz"], yaw, segments(tick), rules)
         df = pd.DataFrame({"tick": tick, "t_s": (state["timestamp_us"] - t0_us) / 1e6, "track_id": track_id})
         df["label_class"] = track.label_class[state["sighting"]]
         df[XYZ] = state["xyz"]

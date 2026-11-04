@@ -20,6 +20,9 @@ read this scene; they never decide which objects count. That decision is made he
   needs every object present at a tick, not who it was before.
 - **Ground truth:** offline labels are treated as truth (T001). Positions between sightings are
   interpolated, even though that uses a sighting up to ~0.1 s in the future.
+- **Causal motion (decided 2026-11-04, T009):** derived velocity, acceleration and yaw rate at a tick
+  use only that tick and earlier ones, as a car would know them live. Nothing about the future goes
+  into them. They are NaN where nothing earlier exists.
 - **Ego source:** `egomotion.offline` for scene geometry (T004: the labels match it in space and
   time). Online `egomotion` scenes can still be built for comparison, but are never mixed with offline.
 - **3D everywhere**, plus planar x, y, yaw for the equations.
@@ -55,7 +58,7 @@ One folder per clip and ego source: `data/scene/<clip_id>/<ego_source>/`.
   - vru: person, rider, stroller, animal;
   - static: protruding_object;
   - unknown: anything else.
-- `rules`: `gap_bridge_s` (0.5), `dedup_s` (0.020), `dedup_max_offset_m` (0.2),
+- `rules`: `gap_bridge_s` (0.5), `dedup_s` (0.020), `accel_span_s` (0.4, T009), `dedup_max_offset_m` (0.2),
   `dedup_offset_per_m` (0.005: duplicates may differ by 0.2 m + 0.5% of range, T020), `lidar_min_points` (5), `lidar_box_margin_m` (0.2),
   `ground_clearance_m` (0.2), `history_s` (1.6)
 - `inputs`: SHA-256 of every raw file used (from `data/raw/manifest.json`), code version.
@@ -70,10 +73,10 @@ One folder per clip and ego source: `data/scene/<clip_id>/<ego_source>/`.
 | `x, y, z` | m | rear-axle midpoint, world frame (anchor = rig at clip time 0) |
 | `qx, qy, qz, qw` | — | orientation, world frame |
 | `yaw` | rad | heading in the world x-y plane, unwrapped |
-| `vx, vy, vz, speed` | m/s | derived from poses, world frame |
-| `ax, ay, az` | m/s² | derived, world frame |
+| `vx, vy, vz, speed` | m/s | derived from poses, world frame: (x(t) − x(t−0.1 s)) / 0.1 s. NaN at tick 0 |
+| `ax, ay, az` | m/s² | derived, world frame: (v(t) − v(t−0.4 s)) / 0.4 s, shorter span early. NaN at ticks 0–1 |
 | `a_long, a_lat` | m/s² | derived, in the ego frame |
-| `yaw_rate` | rad/s | derived |
+| `yaw_rate` | rad/s | derived, like velocity |
 | `has_history` | bool | t_s ≥ history_s (Alpamayo needs 1.6 s of past input) |
 
 **`objects.parquet`**: one row per (tick, track) where the object **exists**. Rows where it exists
@@ -87,9 +90,9 @@ but is not observed are kept, with `in_scene = false`, so we can see why it was 
 | `x, y, z` | m | box center, world frame |
 | `qx, qy, qz, qw`, `yaw` | | box orientation, world frame |
 | `length, width, height` | m | box size (label `size_x, size_y, size_z`) |
-| `vx, vy, vz, speed` | m/s | derived, world frame |
-| `ax, ay, az` | m/s² | derived, world frame |
-| `yaw_rate` | rad/s | derived |
+| `vx, vy, vz, speed` | m/s | derived as for the ego, per run of ticks. NaN at a run's first tick |
+| `ax, ay, az` | m/s² | derived as for the ego. NaN at a run's first two ticks. **Noise ~1.6–2.4 m/s² p95: not an input to the equations (T009)** |
+| `yaw_rate` | rad/s | derived, like velocity |
 | `rel_x, rel_y, rel_z` | m | box center in the ego frame at this tick (origin at the rear axle) |
 | `rel_yaw` | rad | box heading relative to ego heading |
 | `distance` | m | planar center-to-center distance from the ego rear axle |
@@ -107,8 +110,7 @@ The equations read only rows with `in_scene = true`.
 - [ ] For both clips and both ego sources, `data/scene/...` holds the three files above.
 - [ ] Every column has a test or a recorded check.
 - [x] Derived ego motion is compared with online egomotion (T009). If the difference is large, the
-      method is revised before E02 closes. (T009: speed and yaw rate agree; no smoothing needed. Only
-      the run-end `edge_order` fix is pending.)
+      method is revised before E02 closes. (T009: revised to causal backward differences.)
 - [ ] Rerun: playing `clip_time` shows the ego, all existing boxes (in-scene ones highlighted), and
       the lidar points; objects appear and disappear exactly when `in_scene` flips.
 

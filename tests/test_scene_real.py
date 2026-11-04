@@ -39,7 +39,11 @@ def test_grid_and_columns(scene):
     assert list(o.columns) == OBJECT_COLUMNS
     assert o["tick"].between(0, scene.meta["n_ticks"] - 1).all()
     assert not o.duplicated(["tick", "track_id"]).any()
-    assert not e.isna().any().any()
+    # Causal motion (T009): no velocity or yaw rate at tick 0, no acceleration before tick 2; nothing else missing.
+    first = {"vx", "vy", "vz", "speed", "yaw_rate"}
+    first_two = {"ax", "ay", "az", "a_long", "a_lat"}
+    nan_ticks = {c: e.loc[e[c].isna(), "tick"].tolist() for c in e.columns}
+    assert nan_ticks == {c: [0] if c in first else [0, 1] if c in first_two else [] for c in e.columns}
     assert scene.report["unknown_classes"] == []
 
 

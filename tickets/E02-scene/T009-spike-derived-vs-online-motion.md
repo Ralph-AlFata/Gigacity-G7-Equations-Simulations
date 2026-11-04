@@ -24,11 +24,18 @@ the car itself recorded, i.e. the velocity and acceleration columns of online `e
   - a larger difference window;
   - Savitzky–Golay;
   - a constant-acceleration Kalman smoother.
+- [x] Added 2026-11-04 (review): **causal methods only**. The replay simulates a live car, so motion at
+      tick t may use only ticks ≤ t. Repeat the comparison with backward differences, trailing
+      Savitzky–Golay and a forward-only Kalman filter. Then change step 7 to the best one.
 
 ## Hypotheses
 1. Speed agrees within ~0.1 m/s; acceleration is noisy without smoothing.
 
 ## Findings
+### Part 1: centred methods (superseded by part 2)
+These methods use ticks after t, so they are not allowed in the replay. They are kept here because
+they show what the data allows when the future is known, and they describe the reference.
+
 Script: `scripts/spike_t009_motion.py` (`uv run python scripts/spike_t009_motion.py`), on the scenes
 built with T020's rule, for all 5 clips we have (our two plus the three random ones). Plots over time
 are in `results/t009/<clip>.rrd`, one per clip (`rerun results/t009/<clip>.rrd`).
@@ -120,7 +127,7 @@ derived motion measures noise. That is 27 416 object-ticks over the 5 clips, off
 - **Size against the ego:** object noise is about 10× the ego's. It comes from the labels, not from
   the poses.
 
-### Side finding: acceleration at the ends of a run is biased
+### Side finding: acceleration at the ends of a run is biased (moot after part 2)
 - **What:** T007 uses `np.gradient` with first-order ends. On a constant-acceleration path, the
   acceleration at the first and last tick of every run is off by **half the true acceleration**
   (0.75 m/s² for a true 1.5 m/s²). Velocity is fine there.
@@ -128,39 +135,110 @@ derived motion measures noise. That is 27 416 object-ticks over the 5 clips, off
   every track's birth, death, and each gap longer than 0.5 s.
 - **Fix:** `np.gradient(..., edge_order=2)` is exact on that path.
 
+### Part 2: causal methods (decided 2026-11-04)
+Script: `scripts/spike_t009_causal.py` (`uv run python scripts/spike_t009_causal.py`, ~35 s).
+
+**Methods:** each uses only ticks ≤ t, with a warm-up at the start of a run.
+- **Backward difference** over 0.1, 0.2, 0.3 and 0.5 s, for velocity, then the same again for
+  acceleration.
+- **Trailing Savitzky–Golay** over 0.3–1.5 s, poly 1–3, evaluated at the newest tick.
+- **Forward-only Kalman** (constant acceleration, no smoother pass), q = 0.3–300 m²/s⁵.
+- **Mixed:** velocity by backward difference over 0.1 s, and acceleration as the change of *that*
+  velocity over 0.1–0.5 s.
+
+**Checks:**
+1. **Ego:** derived from the offline poses, against the recorded motion. These are horizontal vector
+   errors in the rig frame, not just speed.
+2. **Delay:** the shift of the recorded motion that best matches the derived one.
+3. **Objects under real noise:** the ego path plus the real label noise of each parked track (its
+   deviations from its median position; 223 sequences, 27 416 ticks), against the ego's recorded
+   motion. This tests object-like data where the truth is known. Results are split by the parked
+   object's distance.
+4. **Parked objects:** derived motion, whose true value is about 0.
+
+**Selected rows, p95:**
+| Method | v delay | a delay | ego v | ego a | ego a, \|a\|>1 | ego yaw rate | object v near / mid / far | object a near / mid / far |
+|---|---|---|---|---|---|---|---|---|
+| **backward 0.1 s** (v) | 0.05 s | — | **0.125** | — | — | **1.25** | **0.47 / 0.61 / 0.72** | — |
+| backward 0.3 s | 0.15 s | 0.27 s | 0.32 | 0.56 | 0.63 | 1.47 | 0.52 / 0.61 / 0.71 | 1.63 / 2.06 / 2.39 |
+| trailing SG 0.5 s p2 | 0.00 s | 0.19 s | 0.094 | 0.59 | 0.66 | 1.23 | 0.55 / 0.71 / 0.83 | 1.89 / 2.36 / 2.77 |
+| trailing SG 0.9 s p2 | 0.01 s | 0.37 s | 0.104 | 0.60 | 0.68 | 1.27 | 0.62 / 0.83 / 0.94 | 1.55 / 1.92 / 2.23 |
+| trailing SG 1.1 s p1 | 0.49 s | 0.47 s | 1.02 | 0.65 | 0.77 | 3.75 | 0.97 / 1.11 / 1.11 | 1.37 / 1.71 / 1.96 |
+| Kalman fwd q=1 | 0.01 s | 0.47 s | 0.14 | 0.64 | 0.75 | 1.56 | 0.58 / 0.80 / 0.90 | 1.31 / 1.66 / 1.86 |
+| Kalman fwd q=30 | 0.00 s | 0.27 s | 0.093 | 0.52 | 0.64 | 1.25 | 0.60 / 0.79 / 0.91 | 1.88 / 2.34 / 2.76 |
+| **a = Δv over 0.4 s** (v from backward 0.1 s) | — | 0.19 s | — | **0.54** | **0.59** | — | — | **1.61 / 2.01 / 2.35** |
+| a = Δv over 0.5 s | — | 0.27 s | — | 0.55 | 0.62 | — | — | 1.43 / 1.84 / 2.12 |
+
+Units are m/s, m/s² and °/s. "Near" is under 20 m, "mid" 20–40 m, "far" over 40 m. The full grid
+(29 + 7 methods) is printed by the script.
+
+**What the numbers say:**
+- **Velocity under object noise: the plainest method wins.** The backward difference over 0.1 s is
+  best or tied at every distance, and only 0.05 s late.
+  - **The noise is slow drift, not jitter.** Averaging longer barely reduces it (parked p95
+    0.67 → 0.64 m/s from 0.1 to 0.3 s) and adds delay.
+  - **Methods that model acceleration amplify it.** Savitzky–Golay p2/p3 and Kalman remove the delay
+    on the clean ego (0.09 m/s), but are worse under label noise.
+- **Velocity on the ego:** Kalman / Savitzky–Golay p2 beat the backward difference by only
+  0.03 m/s (0.09 against 0.125 m/s p95). That is not worth a second method for the ego.
+- **Acceleration:**
+  - **A causal acceleration is always late.** The delay is 0.2–0.5 s; it needs a span of past
+    velocity.
+  - **Ego:** the change of the 0.1 s velocity over the last 0.4 s is the best simple choice:
+    0.54 m/s² p95, 0.59 during manoeuvres over 1 m/s², 0.19 s late. Kalman q=30 is 0.52, but is
+    tuned and just as late.
+  - **Objects:** label noise keeps acceleration at 1.3 m/s² p95 or more at every setting, even near
+    and 0.5 s late. It is not usable as an input.
+- **Real data check:** the rebuilt offline scenes, read from `ego.parquet` itself, give velocity
+  0.125 m/s and acceleration 0.54 m/s² p95 against the recorded motion over the 5 clips, the same as
+  the experiment.
+
 ### Hypotheses
-1. *Speed agrees within ~0.1 m/s; acceleration is noisy without smoothing:* **speed supported**:
-   p95 0.07 m/s, max 0.11 m/s over 5 clips. **Acceleration only partly**: for the ego it is
-   0.39 m/s² p95, with smoothing worth −25%, and half of the gap is the reference itself. For
-   objects, acceleration *is* noisy (p95 2.6 m/s²), and smoothing does not rescue it (best 1.5 m/s²).
+1. *Speed agrees within ~0.1 m/s; acceleration is noisy without smoothing:*
+   - **Speed is supported:** p95 0.07 m/s centred, 0.125 m/s (vector) causal.
+   - **Acceleration only partly:** for the ego, 0.39 m/s² p95 centred and 0.54 m/s² causal, and
+     smoothing only trims it.
+   - **For objects, acceleration is noisy** (≥ 1.3 m/s² p95 causal), and no smoother rescues it.
 
 ## Answer
-**Speed and yaw rate from 10 Hz poses can be used as they are.**
-- Ego speed is within 0.07 m/s at p95 (max 0.11 m/s) of what the car recorded.
-- Ego yaw rate is within 0.8°/s at p95.
-- No smoothing method improves them.
-- **Ego acceleration** is within about 0.4 m/s² at p95. Smoothing brings that to about 0.3 m/s²,
-  which is about how far the car's own recorded acceleration is from its own poses.
+**Step 7 is now causal**, implemented in `build.py` (`derive_motion`, `Rules.accel_span_s`):
+- **Velocity and yaw rate:** backward difference over the last 0.1 s, the latest two positions.
+  - For the ego it is within 0.125 m/s and 1.25°/s p95 of what the car recorded, 0.05 s late.
+  - Under real object label noise it is within 0.47 m/s near, 0.61 mid and 0.72 far, the best of
+    all causal methods tried.
+- **Acceleration:** (v(t) − v(t−0.4 s)) / 0.4 s, with a shorter span while a run is younger.
+  - For the ego it is 0.54 m/s² p95, 0.19 s late.
+- **NaN where nothing earlier exists:** velocity at a run's first tick, acceleration at its first two.
+  A live system wouldn't know a new object's velocity either.
+- **No smoothing:** no causal smoother is better for objects.
 
-**Recommendation: keep T007 step 7 as it is (central differences, no smoothing), plus
-`edge_order=2` at the ends of a run.** No smoother buys enough to justify its tuning and its lag.
-
-**Objects:** speed noise is about 0.15 m/s typical and 0.7 m/s p95, so it is usable with a margin.
-Per-tick object acceleration is **not** usable as an input to the equations, smoothed or not: the
-noise floor (p95 1.5–2.6 m/s²) is as large as real braking. The bounds should take object
-acceleration from class limits (T013, T019), not from the derived column.
+**For the equations:**
+- **Object velocity** carries about 0.5–0.7 m/s p95 of noise. That belongs in the margin.
+- **Object acceleration** must come from class bounds (T013, T019), not from `ax, ay`: its noise
+  floor (1.6–2.4 m/s² p95) is as large as real braking.
 
 **Confidence:**
-- high for ego speed and yaw rate: 5 clips from 0 to 35 m/s, all consistent;
-- medium for the acceleration numbers, since the reference is itself an estimate;
-- medium for the object noise floor, which rests on parked objects.
+- high for the choice of the backward difference: it is best or tied on every object check, and the
+  simplest;
+- medium for the absolute object numbers, which rest on parked-track noise added to the ego path.
 
 ## Follow-ups
-- **T007 step 7:** unchanged method, plus `edge_order=2` (velocity and acceleration at the ends of a
-  run). This is a small code change and will get its own bug ticket if you agree. Tests: exact on a
-  constant-acceleration path at the ends.
-- **T013 / T019:** object acceleration comes from class bounds. The derived `ax, ay` are for viewing
-  and sanity checks only. Speed noise (0.7 m/s p95, more at range) belongs in the margin.
-- **T012:** online's clock offset to offline is not constant (−35 to +55 ms over 5 clips), so it
-  must not be hard-coded when Alpamayo output is placed in the scene. Also, online `curvature` is
-  wrong on 23958e60 (+1.1°/s yaw-rate offset), so don't rely on it if the Alpamayo input path uses it.
+- **T007 step 7:** updated in this PR. Tests:
+  - changing a later tick changes no earlier motion, for ego and objects;
+  - acceleration is exact for constant acceleration after warm-up;
+  - first-tick NaN, on synthetic and real scenes.
+
+  The run-end `np.gradient` bias found in part 1 is gone with the central differences.
+- **T013 / T014:** velocity can be NaN at a track's first tick (and after a gap longer than 0.5 s).
+  The solver must handle an in-scene object with unknown velocity. Object acceleration comes from
+  class bounds.
+- **Other places the scene still uses later data** (not changed here; to decide):
+  1. **Interpolation between sightings:** a tick's position comes from the sightings on both sides,
+     up to 0.1 s ahead normally and **up to 0.5 s ahead across a bridged gap**. This was decided as
+     accepted on 2026-10-31 (E02 principles).
+  2. **Lidar observability (T008)** uses the spin crossing nearest the tick, which can be up to
+     about 50 ms after it.
+- **T012:**
+  - online's clock offset to offline is not constant (−35 to +55 ms over 5 clips), so it must not be
+    hard-coded;
+  - online `curvature` is wrong on 23958e60.

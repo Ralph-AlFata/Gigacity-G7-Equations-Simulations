@@ -99,7 +99,7 @@ def kalman_ca(x: np.ndarray, q: float, r: float = 0.02) -> tuple[np.ndarray, np.
 
 
 METHODS = {
-    "central ±0.1 s (T007, now)": lambda x: (central(x), central(central(x))),
+    "central ±0.1 s (T007 before T009)": lambda x: (central(x), central(central(x))),
     "central ±0.2 s": lambda x: (central(x, 2), central(central(x, 2), 2)),
     "central ±0.3 s": lambda x: (central(x, 3), central(central(x, 3), 3)),
     "Savitzky-Golay 0.7 s": lambda x: (savgol(x, 1, 7), savgol(x, 2, 7)),
@@ -149,6 +149,14 @@ class Recorded:
             "speed": np.linalg.norm(v_body, axis=1), "a_long": a_body[:, 0], "a_lat": a_body[:, 1],
             "yaw_rate": np.degrees(np.interp(t_us, self.t, self.cols["curvature"]) * v_body[:, 0]),
         })  # fmt: skip
+
+    def vectors(self, t_us: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Rig-frame velocity and acceleration vectors, and yaw rate (°/s), at `t_us`."""
+        col = lambda names: np.column_stack([np.interp(t_us, self.t, self.cols[n]) for n in names])  # noqa: E731
+        _, rot = self.poses.at(t_us)
+        v_body = rot.inv().apply(col(["vx", "vy", "vz"]))
+        yaw_rate = np.degrees(np.interp(t_us, self.t, self.cols["curvature"]) * v_body[:, 0])
+        return v_body, rot.inv().apply(col(["ax", "ay", "az"])), yaw_rate
 
     def yaw_rate_check(self) -> tuple[float, float]:
         """curvature x forward speed against the 100 Hz derivative of online yaw: (RMS °/s, correlation)."""
