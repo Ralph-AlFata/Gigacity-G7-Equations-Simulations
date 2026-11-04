@@ -14,7 +14,9 @@ from scipy.spatial.transform import Rotation
 
 from horizon_pipeline.scene.build import build_scene, write_scene
 from horizon_pipeline.scene.camera import Camera, FTheta
-from horizon_pipeline.scene.view import CLASS_COLORS, FAR_ALPHA, UNSEEN_COLOR, ViewOptions, box_strips, log_scene, object_color, state_at
+from horizon_pipeline.scene.view import (
+    CLASS_COLORS, FAR_ALPHA, UNSEEN_COLOR, ViewOptions, box_strips, interleave, log_scene, object_color, state_at,
+)  # fmt: skip
 from test_scene import CLIP, clock, mover, write_clip
 
 # The front-wide camera of b789fab8 (camera_intrinsics.offline).
@@ -161,7 +163,36 @@ def write_camera(clip_dir, name="camera_front_wide_120fov", n=31, size=(192, 108
     return name
 
 
-def test_log_scene_recording(tmp_path):
+def test_interleave_advances_the_earliest_stream():
+    logged = []
+
+    def stream(name, times):
+        logged.append((name, "static"))
+        for t in times:
+            yield t
+            logged.append((name, t))
+
+    interleave([stream("slow", [0.0, 0.1, 0.2]), stream("fast", [0.0, 0.033, 0.067, 0.1, 0.133]), stream("empty", [])])
+    timed = [t for _, t in logged if t != "static"]
+    assert timed == sorted(timed) and len(timed) == 8
+    assert logged[:3] == [("slow", "static"), ("fast", "static"), ("empty", "static")]
+
+
+class RecordingOrder:
+    """Stands in for a RecordingStream and keeps the clip time of every timed log, in call order."""
+
+    def __init__(self):
+        self.now, self.timed = None, []
+
+    def set_time(self, timeline, duration):
+        self.now = duration
+
+    def log(self, path, entity, static=False):
+        if not static:
+            self.timed.append((self.now, path))
+
+
+def synthetic_clip(tmp_path):
     long_center, long_yaw, _ = mover(v=(9.0, -1.5, 0.0), c0=(15.0, 0.0, 0.8), yaw=0.0)
     short_center, short_yaw, _ = mover(v=(0.0, 0.0, 0.0), c0=(30.0, 8.0, 0.8), yaw=1.0)
     clip_dir = write_clip(tmp_path / "raw", {
@@ -170,7 +201,22 @@ def test_log_scene_recording(tmp_path):
     })  # fmt: skip
     for source in ("offline", "online"):
         write_scene(build_scene(clip_dir, source, lidar=False), tmp_path / "scene")
-    camera = write_camera(clip_dir)
+    return clip_dir, write_camera(clip_dir)
+
+
+def test_all_sources_are_logged_together_in_time_order(tmp_path):
+    """The viewer fills every panel from the start: no source is logged ahead of another."""
+    clip_dir, camera = synthetic_clip(tmp_path)
+    rec = RecordingOrder()
+    log_scene(rec, tmp_path / "scene" / CLIP / "offline", clip_dir, ViewOptions(lidar=False, cameras=[camera], compare=True))
+    times = [t for t, _ in rec.timed]
+    assert times == sorted(times)
+    first_camera = next(k for k, (_, path) in enumerate(rec.timed) if path.startswith("/cameras/") or path.startswith("cameras/"))
+    assert first_camera < 20  # the camera starts with the first ticks, not after all the 3D data
+
+
+def test_log_scene_recording(tmp_path):
+    clip_dir, camera = synthetic_clip(tmp_path)
 
     path = tmp_path / "view.rrd"
     rec = rr.RecordingStream("test", recording_id="test")
