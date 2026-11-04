@@ -235,6 +235,44 @@ def test_inconsistent_duplicates_stop_the_build(tmp_path, column, change):
         build_scene(d, "offline", lidar=False)
 
 
+def write_far_duplicate(tmp_path, c0, column="center_x", change=0.8):
+    """A parked track at `c0` (world = rig frame at t=0, roughly), plus a duplicate of its 6th row
+    1.2 ms later with `column` changed by `change` (T020: the b6cb8b12 truck)."""
+    center, yaw, _ = mover(v=(0.0, 0.0, 0.0), c0=c0, yaw=0.0)
+    d = write_clip(tmp_path, {"228": ("heavy_truck", clock(0, 1_000_000), center, yaw, (10.8, 2.9, 3.8))})
+    obs = pd.read_parquet(d / "obstacle.offline.parquet")
+    dup = obs.iloc[[5]].copy()
+    dup["timestamp_us"] = dup["timestamp_us"] + np.uint64(1_200)
+    dup[column] = change if column == "label_class" else dup[column] + change
+    pd.concat([obs, dup]).to_parquet(d / "obstacle.offline.parquet", index=False)
+    return d
+
+
+def test_far_duplicates_get_a_range_allowance(tmp_path):
+    # 0.8 m apart at 200 m: limit 0.2 + 0.005 x 200 = 1.2 m.
+    d = write_far_duplicate(tmp_path, c0=(-200.0, 0.0, 1.0))
+    pair = pd.read_parquet(d / "obstacle.offline.parquet").iloc[[5, -1]]
+    scene = build_scene(d, "offline", lidar=False)
+    report = scene.report["duplicate_check"]
+    assert scene.report["duplicates_merged"] == 1
+    assert report["pairs_over_flat_limit"] == 1
+    assert report["largest_offset_m"] == pytest.approx(0.8, abs=1e-6)
+    assert report["largest_offset_range_m"] == pytest.approx(np.hypot(*pair[["center_x", "center_y"]].mean()), abs=0.05)
+    assert scene.meta["rules"]["dedup_offset_per_m"] == 0.005
+
+
+def test_near_duplicates_still_stop_the_build(tmp_path):
+    # 0.8 m apart at 10 m: limit 0.25 m.
+    with pytest.raises(DuplicateError, match="track 228"):
+        build_scene(write_far_duplicate(tmp_path, c0=(10.0, 0.0, 1.0)), "offline", lidar=False)
+
+
+@pytest.mark.parametrize("column, change", [("label_class", "automobile"), ("size_x", 0.5)])
+def test_class_or_size_mismatch_stops_the_build_at_any_range(tmp_path, column, change):
+    with pytest.raises(DuplicateError, match="track 228"):
+        build_scene(write_far_duplicate(tmp_path, (-200.0, 0.0, 1.0), column, change), "offline", lidar=False)
+
+
 def test_write_scene_layout_and_meta(tmp_path):
     center, yaw, _ = mover()
     write_clip(tmp_path / "raw", {"7": ("automobile", clock(0, 2_000_000), center, yaw, (4, 2, 1.5))})

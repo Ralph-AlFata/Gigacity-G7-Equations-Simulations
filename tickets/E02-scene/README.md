@@ -55,7 +55,8 @@ One folder per clip and ego source: `data/scene/<clip_id>/<ego_source>/`.
   - vru: person, rider, stroller, animal;
   - static: protruding_object;
   - unknown: anything else.
-- `rules`: `gap_bridge_s` (0.5), `dedup_s` (0.020), `lidar_min_points` (5), `lidar_box_margin_m` (0.2),
+- `rules`: `gap_bridge_s` (0.5), `dedup_s` (0.020), `dedup_max_offset_m` (0.2),
+  `dedup_offset_per_m` (0.005: duplicates may differ by 0.2 m + 0.5% of range, T020), `lidar_min_points` (5), `lidar_box_margin_m` (0.2),
   `ground_clearance_m` (0.2), `history_s` (1.6)
 - `inputs`: SHA-256 of every raw file used (from `data/raw/manifest.json`), code version.
 
@@ -119,7 +120,7 @@ The equations read only rows with `in_scene = true`.
 | T008 | Task | Lidar observability and `in_scene` | done |
 | T009 | Spike | Derived ego motion vs online egomotion | todo |
 | T010 | Task | Stream a scene to Rerun | done |
-| T020 | Bug | Duplicate check is too strict for distant objects | in-progress |
+| T020 | Bug | Duplicate check is too strict for distant objects | review |
 
 ## Notes
 Measured on our two clips (old raw files):

@@ -155,7 +155,7 @@ uv run horizon-scene build --clips b789fab8-41f1-4cf3-b7f8-a8e94939f67d --ego-so
 
 For each clip and source it prints a summary:
 - the ticks and the object rows;
-- the duplicates removed;
+- the duplicates removed, and any that needed the range allowance (offset over 0.2 m);
 - a parked-car stability check, which shows whether the transforms are consistent;
 - the observed share by class and by distance band.
 
@@ -247,8 +247,8 @@ p_ego   = R(t_k)ᵀ · (p_world − x(t_k))     world → ego frame at tick t_k
    - the ego poses (dense part only);
    - the object sightings, where each row is (time, track ID, box relative to the rig at that time);
    - the vehicle dimensions.
-2. **De-duplicate:** drop rows of one track less than 20 ms apart. They must agree (size identical,
-   position within 0.2 m), otherwise the build stops.
+2. **De-duplicate:** drop rows of one track less than 20 ms apart. They must agree (same class, size identical,
+   position within 0.2 m + 0.5% of the range, T020), otherwise the build stops.
 3. **Sightings to world:** use the ego pose at each sighting's own timestamp.
 4. **Resample each track onto the grid:**
    - **Lifetime:** a track exists from its first to its last sighting. There is no extrapolation.
