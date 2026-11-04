@@ -41,7 +41,8 @@ UNKNOWN_GROUP = "unknown"
 class Rules:
     gap_bridge_s: float = 0.5  # bridge skips between sightings up to this long
     dedup_s: float = 0.020  # rows of one track closer than this are duplicates
-    dedup_max_offset_m: float = 0.2  # duplicates must agree to within this (rig-frame centers)
+    dedup_max_offset_m: float = 0.2  # duplicates must agree to within this (rig-frame centers) ...
+    dedup_offset_per_m: float = 0.005  # ... plus this much per metre of range (T020)
     dedup_size_tol_m: float = 1e-3
     gap_report_s: float = 0.15  # gap_s is reported only above this (normal spacing is 0.1 s)
     history_s: float = 1.6  # Alpamayo needs this much past input
@@ -107,9 +108,12 @@ def make_grid(poses: Poses) -> np.ndarray:
     return np.arange(first, poses.end + 1, TICK_US, dtype=np.int64)
 
 
-def deduplicate(obs: pd.DataFrame, rules: Rules) -> tuple[pd.DataFrame, int]:
+def deduplicate(obs: pd.DataFrame, rules: Rules) -> tuple[pd.DataFrame, int, dict]:
     """Step 3: drop the earlier row of each pair of a track's rows less than `dedup_s` apart,
-    after checking that both describe the same box. Expects `obs` sorted by track and time."""
+    after checking that both describe the same box. Expects `obs` sorted by track and time.
+
+    The allowed center offset grows with the pair's planar range from the rig, because label error
+    does (T020). Also returns how many pairs needed that allowance and the largest such offset."""
     t = obs["timestamp_us"].to_numpy(np.int64, copy=True)
     track = obs["track_id"].to_numpy(copy=True)
     same = np.zeros(len(obs), bool)
@@ -119,20 +123,29 @@ def deduplicate(obs: pd.DataFrame, rules: Rules) -> tuple[pd.DataFrame, int]:
     center = obs[["center_x", "center_y", "center_z"]].to_numpy(float, copy=True)
     size = obs[["size_x", "size_y", "size_z"]].to_numpy(float, copy=True)
     cls = obs["label_class"].to_numpy(copy=True)
+    offset = np.linalg.norm(center[i] - center[j], axis=1)
+    rng = np.hypot(*((center[i, :2] + center[j, :2]) / 2).T)
     bad = (
         (cls[i] != cls[j])
         | (np.abs(size[i] - size[j]) > rules.dedup_size_tol_m).any(1)
-        | (np.linalg.norm(center[i] - center[j], axis=1) > rules.dedup_max_offset_m)
+        | (offset > rules.dedup_max_offset_m + rules.dedup_offset_per_m * rng)
     )
     if bad.any():
         pairs = [
             f"track {track[a]} at {t[a]} / {t[b]} us: class {cls[a]} / {cls[b]}, "
             f"size {size[a].round(3).tolist()} / {size[b].round(3).tolist()}, "
-            f"offset {np.linalg.norm(center[a] - center[b]):.3f} m"
-            for a, b in zip(i[bad][:10], j[bad][:10])
+            f"offset {offset[k]:.3f} m at range {rng[k]:.1f} m"
+            for k, a, b in ((k, i[k], j[k]) for k in np.flatnonzero(bad)[:10])
         ]
         raise DuplicateError(f"{bad.sum()} duplicate pairs disagree:\n  " + "\n  ".join(pairs))
-    return obs.loc[~same].reset_index(drop=True), int(same.sum())
+    over = offset > rules.dedup_max_offset_m
+    worst = int(np.argmax(np.where(over, offset, -1))) if over.any() else None
+    check = {
+        "pairs_over_flat_limit": int(over.sum()),
+        "largest_offset_m": None if worst is None else round(float(offset[worst]), 3),
+        "largest_offset_range_m": None if worst is None else round(float(rng[worst]), 1),
+    }
+    return obs.loc[~same].reset_index(drop=True), int(same.sum()), check
 
 
 def sightings_to_world(obs: pd.DataFrame, poses: Poses) -> tuple[np.ndarray, Rotation]:
@@ -332,7 +345,7 @@ def build_scene(
     n_raw = len(obs)
     covered = obs["timestamp_us"].between(poses.start, poses.end)
     obs = obs.loc[covered].reset_index(drop=True)
-    obs, n_merged = deduplicate(obs, rules)
+    obs, n_merged, dedup_check = deduplicate(obs, rules)
     ego, ego_xyz, ego_rot = ego_table(poses, ticks, t0_us, rules)
     tracks = world_tracks(obs, poses)
     objects = objects_table(tracks, ticks, t0_us, ego_xyz, ego_rot, rules)
@@ -350,6 +363,7 @@ def build_scene(
         "sightings": n_raw,
         "sightings_outside_ego_range": int((~covered).sum()),
         "duplicates_merged": n_merged,
+        "duplicate_check": dedup_check,
         "tracks": int(obs["track_id"].nunique()),
         "tracks_in_scene_file": int(objects["track_id"].nunique()),
         "object_rows": len(objects),

@@ -109,6 +109,9 @@ def build(args: argparse.Namespace) -> int:
                 f"({r['sightings_outside_ego_range']} outside the ego poses, {r['duplicates_merged']} duplicates merged); "
                 f"{r['tracks_in_scene_file']} tracks, {r['object_rows']} object rows"
                 + (f"; unknown classes: {', '.join(r['unknown_classes'])}" if r["unknown_classes"] else "")
+                + (f"\n  duplicates needing the range allowance: {d['pairs_over_flat_limit']}, largest "
+                   f"{d['largest_offset_m']} m at {d['largest_offset_range_m']} m"
+                   if (d := r["duplicate_check"])["pairs_over_flat_limit"] else "")
                 + f"\n  parked tracks: {len(spread)}, position RMS median {spread.median():.3f} m, "
                 f"max {spread.max():.3f} m"
             )
