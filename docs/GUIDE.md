@@ -164,11 +164,19 @@ It refuses to build if two rows of the same track less than 20 ms apart disagree
 ### `horizon-scene view`: watch a scene next to the real video (T010)
 
 ```sh
-uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d              # opens the viewer
+uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d              # build (or reuse), then open
 uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d --compare \
-    --save artifacts/scene/b789fab8.rrd                                            # or save a recording
-uv run rerun artifacts/scene/b789fab8.rrd                                          # ...and open it later
+    --save artifacts/b789fab8.rrd                                                  # or only write a file
+uv run rerun artifacts/b789fab8.rrd                                                # ...and open it later
 ```
+
+- **Build first, then open.** The command builds the whole recording first, printing each source
+  as it finishes, then opens the finished file in Rerun. The full clip is there at once; nothing
+  streams in.
+- **Reuse.** Recordings are kept as `artifacts/scene/<clip_id>/<ego_source>-<options>.rrd`. The next
+  `view` with the same options opens that file immediately, as long as it is newer than the scene.
+  Rebuilding the scene makes it stale. `--rebuild` forces a new build, for example after changing
+  the viewer code.
 
 What you see, all on one timeline (`clip_time`, play, pause and scrub):
 
@@ -199,8 +207,11 @@ What you see, all on one timeline (`clip_time`, play, pause and scrub):
   | `--no-lidar` | leaves the lidar out |
   | `--labels` | draws every box's label (by default, shown when a box is selected) |
   | `--fade-beyond M` | fades objects more than M metres from the ego (display only; the scene is unchanged) |
+  | `--rebuild` | builds the recording again even if a current one exists |
+  | `--save FILE.rrd` | writes the recording to FILE and does not open it |
 
-- **Cost:** a saved recording is ~150–250 MB and takes 25–55 s. Most of that is lidar.
+- **Cost:** a recording is ~150–250 MB and takes 25–55 s to build, once. Most of that is lidar (~12 s for
+  b789fab8); each camera takes ~3.5 s.
 
 ---
 

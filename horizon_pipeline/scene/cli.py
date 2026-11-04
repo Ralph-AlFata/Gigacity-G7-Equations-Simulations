@@ -2,16 +2,15 @@
 view them in Rerun next to the camera videos."""
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
-
-import rerun as rr
 
 from horizon_pipeline.raw.fetch import read_clip_list
 from horizon_pipeline.scene.build import DEFAULT_OUT, DEFAULT_RAW, EGO_SOURCES, DuplicateError, build_scene, write_scene
 from horizon_pipeline.scene.camera import ALPAMAYO_CAMERAS
 from horizon_pipeline.scene.checks import parked_spread
-from horizon_pipeline.scene.view import ViewOptions, blueprint, log_scene
+from horizon_pipeline.scene.view import DEFAULT_RECORDINGS, ViewOptions, is_current, other_source, recording_path, write_recording
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -24,7 +23,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     build.add_argument("--raw", type=Path, default=DEFAULT_RAW)
     build.add_argument("--out", type=Path, default=DEFAULT_OUT)
     build.add_argument("--no-lidar", action="store_true", help="leave the lidar columns empty (T008)")
-    view = sub.add_parser("view", help="play a built scene in Rerun next to the camera videos")
+    view = sub.add_parser(
+        "view", help="build a Rerun recording of a scene next to the camera videos, then open it",
+        description="Builds the whole recording (or reuses one newer than the scene), then opens it in Rerun.",
+    )  # fmt: skip
     view.add_argument("--clip", required=True, metavar="CLIP_ID")
     view.add_argument("--ego-source", choices=list(EGO_SOURCES), default="offline")
     view.add_argument("--compare", action="store_true", help="also draw the other ego source's box and path")
@@ -35,7 +37,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     view.add_argument("--lidar-every", type=int, default=ViewOptions.lidar_every, help="keep every n-th lidar point (default 10)")
     view.add_argument("--labels", action="store_true", help="draw every box's label (default: shown when a box is selected)")
     view.add_argument("--fade-beyond", type=float, metavar="M", help="fade objects farther than M metres from the ego")
-    view.add_argument("--save", type=Path, metavar="FILE.rrd", help="write a recording instead of opening the viewer")
+    view.add_argument("--save", type=Path, metavar="FILE.rrd", help="write the recording here and do not open it")
+    view.add_argument("--rebuild", action="store_true", help="build the recording even if a current one exists")
+    view.add_argument("--recordings", type=Path, default=DEFAULT_RECORDINGS, help="where recordings are kept")
     view.add_argument("--raw", type=Path, default=DEFAULT_RAW)
     view.add_argument("--scenes", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args(argv)
@@ -68,16 +72,22 @@ def view(args: argparse.Namespace) -> int:
     opts = ViewOptions(lidar=not args.no_lidar, lidar_every=args.lidar_every, cameras=args.cameras,
                        all_frames=args.all_frames, compare=args.compare, labels=args.labels,
                        fade_beyond_m=args.fade_beyond)  # fmt: skip
-    rec = rr.RecordingStream("horizon-scene", recording_id=f"{args.clip}-{args.ego_source}")
-    if args.save:
-        args.save.parent.mkdir(parents=True, exist_ok=True)
-        rec.save(args.save, default_blueprint=blueprint(args.cameras))
+    if opts.compare and not (scene_dir.parent / other_source(args.ego_source) / "meta.json").is_file():
+        print(f"--compare needs the {other_source(args.ego_source)} scene too: run `horizon-scene build --clips {args.clip} --ego-source both`", file=sys.stderr)
+        return 1
+    path = args.save or recording_path(args.recordings, args.clip, args.ego_source, opts)
+    if args.rebuild or args.save or not is_current(path, scene_dir, opts):
+        print(f"building {path} ...")
+        write_recording(path, scene_dir, clip_dir, opts, progress=print)
+        print(f"  {path.stat().st_size / 1e6:.0f} MB")
     else:
-        rec.spawn(default_blueprint=blueprint(args.cameras))
-    log_scene(rec, scene_dir, clip_dir, opts)
-    rec.flush()
+        print(f"using {path} (newer than the scene; --rebuild to build it again)")
     if args.save:
-        print(f"wrote {args.save}; open it with `uv run rerun {args.save}`")
+        print(f"open it with `uv run rerun {path}`")
+        return 0
+    subprocess.Popen([sys.executable, "-m", "rerun", str(path)], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # fmt: skip
+    print(f"opened {path} in Rerun")
     return 0
 
 

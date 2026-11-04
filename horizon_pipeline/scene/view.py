@@ -14,10 +14,16 @@ Reads only the scene files, plus the raw lidar, videos and calibration for displ
     cameras/<camera>/boxes        the same boxes, projected into that camera
 
 Timeline: `clip_time`, in seconds from the scene's t0.
+
+The recording is built in full into an .rrd file and then opened, so the viewer has the whole clip
+at once. A recording is reused while it is newer than the scene files it was built from.
 """
 
+import hashlib
 import json
-from dataclasses import dataclass, field
+import time
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +38,7 @@ from horizon_pipeline.scene.frames import QUAT, XYZ, slerp_pairs
 from horizon_pipeline.scene.lidar import POINTCLOUDS, SpinReader, lidar_extrinsic, points_to_world
 
 TIMELINE = "clip_time"
+DEFAULT_RECORDINGS = Path("artifacts/scene")
 CLASS_COLORS = {"vehicle": (60, 140, 255), "vru": (255, 160, 20), "static": (40, 200, 120), "unknown": (220, 60, 220)}
 UNSEEN_COLOR = (150, 150, 150, 90)  # exists, but the lidar does not see it
 FAR_ALPHA = 50  # objects beyond `fade_beyond_m`
@@ -227,18 +234,78 @@ def blueprint(cameras: list[str]) -> rrb.Blueprint:
     return rrb.Blueprint(rrb.Horizontal(world, column, column_shares=[1, 1]), collapse_panels=True)
 
 
-def log_scene(rec: rr.RecordingStream, scene_dir: Path, clip_dir: Path, opts: ViewOptions = ViewOptions()) -> dict:
-    """Logs everything to `rec`; returns the scene's meta."""
+def other_source(ego_source: str) -> str:
+    return next(s for s in ("offline", "online") if s != ego_source)
+
+
+def log_scene(
+    rec: rr.RecordingStream,
+    scene_dir: Path,
+    clip_dir: Path,
+    opts: ViewOptions = ViewOptions(),
+    progress: Callable[[str], None] | None = None,
+) -> dict:
+    """Logs everything to `rec`, one source after another; returns the scene's meta. `progress`
+    receives a line per finished source."""
+    started = time.perf_counter()
+
+    def done(what: str) -> None:
+        nonlocal started
+        if progress:
+            progress(f"  {what:<28} {time.perf_counter() - started:5.1f} s")
+        started = time.perf_counter()
+
     meta, ego, objects = load_scene(scene_dir)
     ego = ego.set_index("tick", drop=False)
     log_ego(rec, meta, ego)
     if opts.compare:
-        other = next(s for s in ("offline", "online") if s != meta["ego_source"])
+        other = other_source(meta["ego_source"])
         other_meta, other_ego, _ = load_scene(Path(scene_dir).parent / other)
         log_ego(rec, other_meta, other_ego, path=f"world/ego_{other}", color=COMPARE_COLOR)
     log_objects(rec, objects, ego["t_s"], opts)
+    done("ego and objects")
     if opts.lidar:
         log_lidar(rec, clip_dir, meta["ego_source"], meta["t0_us"], ego["t_s"], opts.lidar_every)
+        done("lidar")
     for name in opts.cameras:
         log_camera(rec, load_camera(clip_dir, name), meta["t0_us"], ego, objects, opts)
+        done(name)
+    return meta
+
+
+# ---------------------------------------------------------------- recordings on disk
+
+
+def recording_path(root: Path, clip_id: str, ego_source: str, opts: ViewOptions) -> Path:
+    """One file per clip, ego source and set of options: <root>/<clip_id>/<ego_source>-<hash>.rrd."""
+    key = hashlib.sha256(json.dumps(asdict(opts), sort_keys=True).encode()).hexdigest()[:8]
+    return Path(root) / clip_id / f"{ego_source}-{key}.rrd"
+
+
+def scene_inputs(scene_dir: Path, opts: ViewOptions) -> list[Path]:
+    scene_dir = Path(scene_dir)
+    dirs = [scene_dir] + ([scene_dir.parent / other_source(scene_dir.name)] if opts.compare else [])
+    return [f for d in dirs for f in d.iterdir() if f.is_file()]
+
+
+def is_current(path: Path, scene_dir: Path, opts: ViewOptions) -> bool:
+    """The recording exists and is newer than every scene file it was built from."""
+    path = Path(path)
+    return path.is_file() and path.stat().st_mtime >= max(f.stat().st_mtime for f in scene_inputs(scene_dir, opts))
+
+
+def write_recording(
+    path: Path, scene_dir: Path, clip_dir: Path, opts: ViewOptions, progress: Callable[[str], None] | None = None
+) -> dict:
+    """Builds the whole recording into `path`. It is written to a temporary file first, so a build
+    that stops halfway never leaves a file that looks complete."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(path.name + ".partial")
+    rec = rr.RecordingStream("horizon-scene", recording_id=f"{Path(clip_dir).name}-{Path(scene_dir).name}")
+    rec.save(partial, default_blueprint=blueprint(opts.cameras))
+    meta = log_scene(rec, scene_dir, clip_dir, opts, progress)
+    rec.flush()
+    rec.disconnect()
+    partial.replace(path)
     return meta

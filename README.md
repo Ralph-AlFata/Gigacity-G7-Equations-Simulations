@@ -119,20 +119,24 @@ stops if two rows of a track less than 20 ms apart disagree.
 
 ## Viewing scenes (`horizon-scene view`)
 
-Plays a built scene in Rerun: the scene in 3D on the left, the camera videos on the right with
+Shows a built scene in Rerun: the scene in 3D on the left, the camera videos on the right with
 the scene's boxes drawn on them. One timeline, `clip_time`, drives all of it.
+
+It first builds the whole recording into `artifacts/scene/<clip_id>/<ego_source>-<options>.rrd`
+(~25 s for b789fab8, ~55 s for b4d979af), then opens it, so the full clip is there at once. The
+next time it reuses that file as long as it is newer than the scene. `--rebuild` builds it again.
 
 ```sh
 # The camera videos first (the three Alpamayo uses, ~95 MB for both clips).
 uv run horizon-fetch --clips-file clips_selected_train.txt \
     --features camera_front_wide_120fov:video camera_cross_left_120fov:video camera_cross_right_120fov:video
 
-# Open the viewer.
+# Build the recording (or reuse it) and open it.
 uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d
 
-# Or save a recording (~150-250 MB) and open it later.
-uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d --compare --save artifacts/scene/b789fab8.rrd
-uv run rerun artifacts/scene/b789fab8.rrd
+# Or write it to a file of your choice without opening it (~150-250 MB), and open it later.
+uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d --compare --save artifacts/b789fab8.rrd
+uv run rerun artifacts/b789fab8.rrd
 ```
 
 - **Box colors:** boxes are colored by class group (vehicle blue, vru orange, static green) when

@@ -16,7 +16,8 @@ car actually saw.
   - the raw lidar spins;
   - the camera videos with their frame timestamps;
   - `camera_intrinsics.offline` and `sensor_extrinsics.offline`.
-- Outputs: a live Rerun viewer, or a saved `.rrd` file under `artifacts/`.
+- Outputs: an `.rrd` recording under `artifacts/scene/<clip_id>/`, built in full and then opened in
+  Rerun (reused while newer than the scene).
 
 ## Specification
 - One timeline, `clip_time`, in seconds (repo convention).
@@ -80,6 +81,16 @@ car actually saw.
 - **Rolling shutter is not modeled.** The sensor reads top to bottom over 30.6 ms
   (`shutter_delay_us`). That is at most ~0.5 m of displacement for an object crossing at 15 m/s,
   and less near the image middle.
+- **Build first, then open:** streaming into a live viewer filled the panels one source after
+  another. Interleaving the sources fixed that order, but split the recording into ~11× more chunks
+  (5 429 vs 471), which slows the viewer. That change was reverted. The viewer now builds the whole
+  `.rrd` and opens it, so the full clip is there at once (448 chunks on b789fab8).
+- **Build time (b789fab8):**
+  - lidar 12 s;
+  - each camera ~3.5 s;
+  - ego and boxes 0.7 s.
+  - Building lidar and cameras in parallel threads measured 23 s → 17 s. It was not adopted, because
+    a recording is built once and then reused.
 - **Size:**
   - b789fab8: 152 MB, 24 s.
   - b4d979af: 247 MB, 54 s (652 tracks).

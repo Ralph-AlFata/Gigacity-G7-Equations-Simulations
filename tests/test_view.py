@@ -2,6 +2,8 @@
 an end-to-end recording of a synthetic clip read back from the .rrd file."""
 
 import json
+import os
+from pathlib import Path
 
 import av
 import numpy as np
@@ -9,12 +11,14 @@ import pandas as pd
 import pytest
 from physical_ai_av.utils.camera_models import FThetaCameraModel
 from rerun.chunk import RrdReader
-import rerun as rr
 from scipy.spatial.transform import Rotation
 
 from horizon_pipeline.scene.build import build_scene, write_scene
 from horizon_pipeline.scene.camera import Camera, FTheta
-from horizon_pipeline.scene.view import CLASS_COLORS, FAR_ALPHA, UNSEEN_COLOR, ViewOptions, box_strips, log_scene, object_color, state_at
+from horizon_pipeline.scene.view import (
+    CLASS_COLORS, FAR_ALPHA, UNSEEN_COLOR, ViewOptions, box_strips, is_current, object_color, recording_path, state_at,
+    write_recording,
+)  # fmt: skip
 from test_scene import CLIP, clock, mover, write_clip
 
 # The front-wide camera of b789fab8 (camera_intrinsics.offline).
@@ -172,12 +176,12 @@ def test_log_scene_recording(tmp_path):
         write_scene(build_scene(clip_dir, source, lidar=False), tmp_path / "scene")
     camera = write_camera(clip_dir)
 
-    path = tmp_path / "view.rrd"
-    rec = rr.RecordingStream("test", recording_id="test")
-    rec.save(path)
-    meta = log_scene(rec, tmp_path / "scene" / CLIP / "offline", clip_dir, ViewOptions(lidar=False, cameras=[camera], compare=True))
-    rec.flush()
-    rec.disconnect()
+    path = tmp_path / "recordings" / "view.rrd"
+    progress = []
+    meta = write_recording(path, tmp_path / "scene" / CLIP / "offline", clip_dir,
+                           ViewOptions(lidar=False, cameras=[camera], compare=True), progress.append)  # fmt: skip
+    assert [p.split()[0] for p in progress] == ["ego", camera]  # one line per source
+    assert sorted(f.name for f in path.parent.iterdir()) == ["view.rrd"]  # no .partial left behind
 
     store = RrdReader(path).stream().collect()
     entities = set(store.schema().entity_paths())
@@ -196,3 +200,30 @@ def test_log_scene_recording(tmp_path):
     assert not any("Clear" in line for _, line in summary["/world/obstacles/long"])
     # One frame per tick, except the last: that frame (3.0015 s) is after the scene ends (3.0 s).
     assert rows(f"/cameras/{camera}/image") == rows(f"/cameras/{camera}/boxes") == meta["n_ticks"] - 1
+
+
+def test_recording_path_depends_on_the_options():
+    a = recording_path(Path("r"), CLIP, "offline", ViewOptions())
+    assert a == recording_path(Path("r"), CLIP, "offline", ViewOptions())
+    assert a.parent == Path("r") / CLIP and a.name.startswith("offline-") and a.suffix == ".rrd"
+    assert a != recording_path(Path("r"), CLIP, "offline", ViewOptions(fade_beyond_m=30.0))
+    assert a != recording_path(Path("r"), CLIP, "online", ViewOptions())
+
+
+def test_a_recording_is_stale_once_the_scene_is_rebuilt(tmp_path):
+    scenes = tmp_path / "scene" / CLIP
+    for source in ("offline", "online"):
+        (scenes / source).mkdir(parents=True)
+        (scenes / source / "objects.parquet").write_bytes(b"")
+    rrd = tmp_path / "x.rrd"
+    assert not is_current(rrd, scenes / "offline", ViewOptions())
+    rrd.write_bytes(b"")
+    os.utime(scenes / "offline" / "objects.parquet", (1_000, 1_000))
+    os.utime(scenes / "online" / "objects.parquet", (1_000, 1_000))
+    os.utime(rrd, (2_000, 2_000))
+    assert is_current(rrd, scenes / "offline", ViewOptions(compare=True))
+    os.utime(scenes / "online" / "objects.parquet", (3_000, 3_000))  # the other source was rebuilt
+    assert is_current(rrd, scenes / "offline", ViewOptions())
+    assert not is_current(rrd, scenes / "offline", ViewOptions(compare=True))
+    os.utime(scenes / "offline" / "objects.parquet", (3_000, 3_000))
+    assert not is_current(rrd, scenes / "offline", ViewOptions())
