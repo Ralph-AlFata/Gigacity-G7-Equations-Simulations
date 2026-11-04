@@ -232,12 +232,14 @@ Units are m/s, m/s² and °/s. "Near" is under 20 m, "mid" 20–40 m, "far" over
 - **T013 / T014:** velocity can be NaN at a track's first tick (and after a gap longer than 0.5 s).
   The solver must handle an in-scene object with unknown velocity. Object acceleration comes from
   class bounds.
-- **Other places the scene still uses later data** (not changed here; to decide):
-  1. **Interpolation between sightings:** a tick's position comes from the sightings on both sides,
-     up to 0.1 s ahead normally and **up to 0.5 s ahead across a bridged gap**. This was decided as
-     accepted on 2026-10-31 (E02 principles).
-  2. **Lidar observability (T008)** uses the spin crossing nearest the tick, which can be up to
-     about 50 ms after it.
+- **Other places the scene uses later data** (sorted 2026-11-04 by the rule "the environment may use
+  the future; calculations and sensor readings may not"):
+  1. **Interpolation between sightings:** up to 0.1 s ahead normally, 0.5 s across a bridged gap.
+     This builds the environment (the true world state), so it is **fine as is**.
+  2. **Lidar observability (T008):** this is a sensor reading. It uses the spin crossing nearest the
+     tick, up to about 50 ms after it, so it **must change**: use the latest crossing at or before the
+     tick, which makes readings 0–100 ms old. The box the points are counted against can stay the
+     true interpolated box, since that is environment. This needs a new ticket (T008 follow-up).
 - **T012:**
   - online's clock offset to offline is not constant (−35 to +55 ms over 5 clips), so it must not be
     hard-coded;

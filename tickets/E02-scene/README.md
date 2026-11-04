@@ -20,9 +20,16 @@ read this scene; they never decide which objects count. That decision is made he
   needs every object present at a tick, not who it was before.
 - **Ground truth:** offline labels are treated as truth (T001). Positions between sightings are
   interpolated, even though that uses a sighting up to ~0.1 s in the future.
-- **Causal motion (decided 2026-11-04, T009):** derived velocity, acceleration and yaw rate at a tick
-  use only that tick and earlier ones, as a car would know them live. Nothing about the future goes
-  into them. They are NaN where nothing earlier exists.
+- **What may use the future (decided 2026-11-04, T009 review):**
+  - **Building the environment may.** The true world state at a tick (positions interpolated between
+    sightings, lifetimes, bridged gaps) is the simulated world, and may be built from sightings on
+    both sides.
+  - **Calculations and sensor readings may not.** They must use only that tick and earlier ones, as a
+    car would know them live:
+    - derived velocity, acceleration and yaw rate are causal (T009), and NaN where nothing earlier
+      exists;
+    - lidar observability is a sensor reading, so it must use a sweep at or before the tick (to fix:
+      see T009 Follow-ups).
 - **Ego source:** `egomotion.offline` for scene geometry (T004: the labels match it in space and
   time). Online `egomotion` scenes can still be built for comparison, but are never mixed with offline.
 - **3D everywhere**, plus planar x, y, yaw for the equations.
