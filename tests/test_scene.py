@@ -148,10 +148,12 @@ def test_constant_velocity_object_on_an_offset_clock_is_exact(tmp_path):
     t = o["t_s"].to_numpy()
     assert t[0] == pytest.approx(0.1) and t[-1] == pytest.approx(2.9)
     np.testing.assert_allclose(o[["x", "y", "z"]], np.stack([center(s) for s in t]), atol=1e-9)
-    np.testing.assert_allclose(o[["vx", "vy", "vz"]], np.tile(v, (len(o), 1)), atol=1e-9)
-    np.testing.assert_allclose(o[["ax", "ay", "az"]], 0, atol=1e-6)
+    # Motion is causal (T009): nothing before the first tick, so velocity starts at the second.
+    assert o.loc[0, ["vx", "vy", "vz", "yaw_rate"]].isna().all() and o.loc[:1, ["ax", "ay", "az"]].isna().all().all()
+    np.testing.assert_allclose(o.loc[1:, ["vx", "vy", "vz"]], np.tile(v, (len(o) - 1, 1)), atol=1e-9)
+    np.testing.assert_allclose(o.loc[2:, ["ax", "ay", "az"]], 0, atol=1e-6)
     np.testing.assert_allclose(o["yaw"], 0.4, atol=1e-12)
-    np.testing.assert_allclose(o["yaw_rate"], 0, atol=1e-9)
+    np.testing.assert_allclose(o.loc[1:, "yaw_rate"], 0, atol=1e-9)
     np.testing.assert_allclose(o[["length", "width", "height"]], np.tile([4.0, 1.8, 1.5], (len(o), 1)))
     # Ego-frame columns against hand-written matrices.
     p_e, yaw_e = ego_at(t)
@@ -162,9 +164,10 @@ def test_constant_velocity_object_on_an_offset_clock_is_exact(tmp_path):
     np.testing.assert_allclose(o["last_sighting_age_s"], 0.063, atol=1e-9)
     assert (o["gap_s"] == 0).all()
     # Ego table: exact pose and motion.
-    np.testing.assert_allclose(e[["vx", "vy", "vz"]], np.tile(EGO_V, (len(e), 1)), atol=1e-9)
-    np.testing.assert_allclose(e["yaw_rate"], EGO_YAW_RATE, atol=1e-9)
-    np.testing.assert_allclose(e["speed"], np.linalg.norm(EGO_V), atol=1e-9)
+    assert np.isnan(e.loc[0, "speed"])
+    np.testing.assert_allclose(e.loc[1:, ["vx", "vy", "vz"]], np.tile(EGO_V, (len(e) - 1, 1)), atol=1e-9)
+    np.testing.assert_allclose(e.loc[1:, "yaw_rate"], EGO_YAW_RATE, atol=1e-9)
+    np.testing.assert_allclose(e.loc[1:, "speed"], np.linalg.norm(EGO_V), atol=1e-9)
     assert e["has_history"].tolist() == [s >= 1.6 - 1e-9 for s in e["t_s"]]
 
 
@@ -182,8 +185,40 @@ def test_skips_up_to_half_a_second_are_bridged(tmp_path):
     np.testing.assert_allclose(bridged["gap_s"], 0.4)
     np.testing.assert_allclose(bridged["last_sighting_age_s"], [0.1, 0.2, 0.3], atol=1e-9)
     np.testing.assert_allclose(bridged[["x", "y", "z"]], np.stack([center(s) for s in bridged["t_s"]]), atol=1e-9)
-    # Velocity is one-sided at the edges of each run of ticks and still exact for a straight line.
-    np.testing.assert_allclose(o.loc[o["track_id"] == "long", "vx"], 5.0, atol=1e-9)
+    # Each run of ticks starts with no motion (nothing earlier in the run), then is exact.
+    long_vx = o.loc[o["track_id"] == "long"].set_index("tick")["vx"]
+    assert np.isnan(long_vx[0]) and np.isnan(long_vx[16])
+    np.testing.assert_allclose(long_vx.drop([0, 16]), 5.0, atol=1e-9)
+
+
+def test_motion_uses_no_future_tick(tmp_path):
+    """T009: changing a position at a tick changes no motion at earlier ticks (ego and objects)."""
+    center, yaw, _ = mover()
+    write_clip(tmp_path / "a", {"7": ("automobile", clock(0, 2_000_000), center, yaw, (4, 2, 1.5))})
+    bumped = lambda t: center(t) + (np.array([0.0, 0.7, 0.0]) if t > 1.25 else 0.0)  # noqa: E731
+    write_clip(tmp_path / "b", {"7": ("automobile", clock(0, 2_000_000), bumped, yaw, (4, 2, 1.5))})
+    ego_b = pd.read_parquet(tmp_path / "b" / CLIP / "egomotion.offline.parquet")
+    ego_b.loc[ego_b["timestamp"] > 1_250_000, "y"] += 0.3
+    ego_b.to_parquet(tmp_path / "b" / CLIP / "egomotion.offline.parquet", index=False)
+    a, b = (build_scene(tmp_path / d / CLIP, "offline", lidar=False) for d in "ab")
+    cols = ["vx", "vy", "vz", "speed", "ax", "ay", "az", "yaw_rate"]
+    past = lambda df: df.loc[df["t_s"] < 1.25 + 1e-9, cols]  # noqa: E731
+    pd.testing.assert_frame_equal(past(a.objects), past(b.objects))
+    pd.testing.assert_frame_equal(past(a.ego), past(b.ego))
+    assert not np.allclose(a.objects.loc[13, "vy"], b.objects.loc[13, "vy"])  # and it does change later
+
+
+def test_acceleration_is_exact_for_constant_acceleration_after_warm_up(tmp_path):
+    """Velocity is the backward difference, i.e. the mean over the last 0.1 s, so it trails the true
+    velocity by half a tick; acceleration over the last 0.4 s is exact once two velocities exist."""
+    acc = np.array([1.5, -0.5, 0.0])
+    center = lambda t: np.array([20.0, -3.0, 0.8]) + np.array([5.0, 2.0, 0.0]) * t + acc * t * t / 2  # noqa: E731
+    write_clip(tmp_path, {"7": ("automobile", clock(0, 2_000_000), center, lambda t: 0.0, (4, 2, 1.5))})
+    o = build_scene(tmp_path / CLIP, "offline", lidar=False).objects
+    t = o["t_s"].to_numpy()
+    true_v = np.array([5.0, 2.0, 0.0]) + acc * (t[:, None] - 0.05)
+    np.testing.assert_allclose(o.loc[1:, ["vx", "vy", "vz"]], true_v[1:], atol=1e-9)
+    np.testing.assert_allclose(o.loc[2:, ["ax", "ay", "az"]], np.tile(acc, (len(o) - 2, 1)), atol=1e-6)
 
 
 def test_no_rows_outside_a_track_lifetime(tmp_path):

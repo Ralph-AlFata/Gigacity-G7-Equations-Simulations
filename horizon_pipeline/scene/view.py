@@ -84,7 +84,8 @@ def object_color(row, fade_beyond_m: float | None = None) -> tuple:
 
 def object_label(row) -> str:
     points = "?" if pd.isna(row.lidar_points) else int(row.lidar_points)
-    return f"{row.track_id} {row.label_class} {row.speed:.1f} m/s {points} pts"
+    speed = "?" if pd.isna(row.speed) else f"{row.speed:.1f}"
+    return f"{row.track_id} {row.label_class} {speed} m/s {points} pts"
 
 
 # ---------------------------------------------------------------- 3D

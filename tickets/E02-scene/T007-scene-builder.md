@@ -56,13 +56,16 @@ before anything is resampled.
    A tick exactly on a sighting takes it as is. `last_sighting_age_s` = t minus the latest sighting
    at or before t. `gap_s` = the spacing of the two sightings if it is above 0.15 s, else 0.
 
-7. **Derived motion.** Computed from the resampled 10 Hz states, the same way for ego and objects:
-   - velocity is the central difference over ±0.1 s (one-sided at the ends of a lifetime);
-   - acceleration is the central difference of velocity;
-   - yaw rate is the difference of unwrapped yaw.
+7. **Derived motion.** Computed from the resampled 10 Hz states, the same way for ego and objects,
+   per run of ticks. It is **causal**: only the tick itself and earlier ticks of the run are used
+   (changed by T009, 2026-11-04; it was central differences).
+   - velocity is the backward difference over 0.1 s: (x(t) − x(t−0.1)) / 0.1;
+   - yaw rate is the backward difference of unwrapped yaw over 0.1 s;
+   - acceleration is the change of velocity over the last `accel_span_s` (0.4 s), over the run's
+     whole velocity history while that is shorter.
 
-   No smoothing in this version; T009 decides whether it is needed. A track that exists at a single
-   tick gets NaN motion.
+   NaN where nothing earlier exists: velocity and yaw rate at a run's first tick, acceleration at its
+   first two. No smoothing: T009 compared smoothers, and none does better without looking ahead.
 
 8. **Ego-frame columns.** `rel_*` = object pose expressed in the ego frame at the same tick (origin
    at the rear axle). `distance` = planar norm of (rel_x, rel_y).

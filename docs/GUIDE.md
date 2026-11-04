@@ -254,8 +254,11 @@ p_ego   = R(t_k)ᵀ · (p_world − x(t_k))     world → ego frame at tick t_k
    - **Lifetime:** a track exists from its first to its last sighting. There is no extrapolation.
    - **Gaps:** gaps of up to 0.5 s are bridged. A longer gap splits the track into separate runs.
    - **Interpolation:** position is linear, rotation uses slerp, size is linear.
-5. **Derived motion:** compute velocity, acceleration and yaw rate by central differences, separately
-   for the ego and for each run of each object.
+5. **Derived motion:** compute velocity, acceleration and yaw rate from the current and earlier ticks
+   only (T009), separately for the ego and for each run of each object:
+   - velocity and yaw rate over the last 0.1 s;
+   - acceleration as the change of velocity over the last 0.4 s;
+   - NaN at a run's first tick (first two for acceleration), where nothing earlier exists.
 6. **Relative pose:** express every object in the ego frame at that tick (`rel_x`, `rel_y`, `rel_z`, `rel_yaw`,
    `distance`).
 7. **Lidar observability (T008, `lidar.py`):**
