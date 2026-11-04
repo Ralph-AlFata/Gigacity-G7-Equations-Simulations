@@ -106,8 +106,9 @@ The equations read only rows with `in_scene = true`.
 ## Exit criteria
 - [ ] For both clips and both ego sources, `data/scene/...` holds the three files above.
 - [ ] Every column has a test or a recorded check.
-- [ ] Derived ego motion is compared with online egomotion (T009). If the difference is large, the
-      method is revised before E02 closes.
+- [x] Derived ego motion is compared with online egomotion (T009). If the difference is large, the
+      method is revised before E02 closes. (T009: speed and yaw rate agree; no smoothing needed. Only
+      the run-end `edge_order` fix is pending.)
 - [ ] Rerun: playing `clip_time` shows the ego, all existing boxes (in-scene ones highlighted), and
       the lidar points; objects appear and disappear exactly when `in_scene` flips.
 
@@ -118,9 +119,9 @@ The equations read only rows with `in_scene = true`.
 | T006 | Spike | Is the rig origin the rear-axle midpoint? | done |
 | T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | done |
 | T008 | Task | Lidar observability and `in_scene` | done |
-| T009 | Spike | Derived ego motion vs online egomotion | todo |
+| T009 | Spike | Derived ego motion vs online egomotion | review |
 | T010 | Task | Stream a scene to Rerun | done |
-| T020 | Bug | Duplicate check is too strict for distant objects | review |
+| T020 | Bug | Duplicate check is too strict for distant objects | done |
 
 ## Notes
 Measured on our two clips (old raw files):

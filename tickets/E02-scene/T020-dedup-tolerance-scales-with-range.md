@@ -2,7 +2,7 @@
 
 **Type:** Bug
 **Epic:** E02
-**Status:** review
+**Status:** done
 **Found in:** T007, `horizon_pipeline/scene/build.py:125` (`deduplicate`), on clip
 `b6cb8b12-8b36-49c2-8609-63c4e2958e28` (random clip picked 2026-11-04)
 
