@@ -183,11 +183,16 @@ What you see, all on one timeline (`clip_time`, play, pause and scrub):
 | Panel | Shows |
 |---|---|
 | left: `scene` (3D, follows the ego) | the ego box, heading and path; every existing object box; the lidar spin nearest the tick |
+| left, below: three plots (T022) | the ego's speed (m/s), longitudinal and lateral acceleration (m/s²) and yaw rate (°/s) over the whole clip; the playhead marks the current tick. With `--compare`, the other ego source is overlaid |
 | right: the three cameras | the real video frames, with the scene's boxes drawn on them |
 
 - **Box colors:** vehicles are blue, VRUs orange and static objects green when the object is
   `in_scene`. Gray means it exists but the lidar does not see it. Clicking a box shows its label:
   track ID, class, speed and lidar points. `--labels` draws all labels at once.
+- **Ego label:** the ego box always shows its speed and longitudinal acceleration at the current
+  tick, e.g. `ego 7.1 m/s, a_long +0.7 m/s²` (T022). `?` at the first tick(s), where the causal motion
+  doesn't exist yet (T009). The scene has one value per 0.1 s tick, so between ticks the viewer
+  shows the latest tick at or before the playhead.
 - **Drawing boxes on the video:**
   - Each box is moved to the video frame's own time (position linear, rotation slerp), then from
     world to rig to camera.
@@ -342,14 +347,17 @@ objects count.
 3. **Write** the recording to `artifacts/scene/<clip_id>/<ego_source>-<options>.rrd`. It goes to a
    `.partial` file first and is renamed only when complete.
 4. **Open** the finished file in Rerun. The whole clip is loaded at once.
-5. **Reuse** the file next time, as long as it is newer than the scene files. The `<options>` part is
+5. **Reuse** the file next time, as long as it is newer than the scene files. A change to what a
+   recording contains bumps `RECORDING_VERSION` in `view.py`, which is part of the hash, so old
+   recordings are not reused. The `<options>` part is
    a hash of the options, so different options get different files.
 
 ### What each piece is made from
 
 | Entity | From | Notes |
 |---|---|---|
-| `world/ego` | `ego.parquet` | one transform per tick; the box is the footprint in `meta.json`, so it sits on the rear axle |
+| `world/ego` | `ego.parquet` | one transform per tick; the box is the footprint in `meta.json`, so it sits on the rear axle; its label is the speed and a_long at that tick |
+| `plots/ego/<quantity>` | `ego.parquet` | `speed`, `a_long`, `a_lat`, `yaw_rate` (in °/s); ticks without a value yet are left out (T022) |
 | `world/obstacles/<track_id>` | `objects.parquet` | one box per row; cleared at ticks where the track does not exist |
 | `world/lidar` | raw spins | the spin whose **middle** is nearest the tick, each point placed with the ego pose at its own time, 1 point in 10 |
 | `cameras/<cam>/image` | `video.mp4` + `frame_timestamps` | the frame nearest each tick, at that frame's own time, half resolution |

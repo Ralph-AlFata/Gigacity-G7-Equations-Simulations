@@ -77,3 +77,4 @@ checklist item inside the ticket, not a nested folder.
 | T019 | Experiment | Do the object bounds hold on our scenes? | E03 | todo | T008, T009, T013 |
 | T020 | Bug | Duplicate check is too strict for distant objects | E02 | done | T007 |
 | T021 | Task | Causal lidar observability | E02 | review | T008, T009 |
+| T022 | Task | Ego speed and acceleration in the viewer | E02 | review | T010 |

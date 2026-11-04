@@ -16,7 +16,7 @@ from scipy.spatial.transform import Rotation
 from horizon_pipeline.scene.build import build_scene, write_scene
 from horizon_pipeline.scene.camera import Camera, FTheta
 from horizon_pipeline.scene.view import (
-    CLASS_COLORS, FAR_ALPHA, UNSEEN_COLOR, ViewOptions, box_strips, is_current, object_color, recording_path, state_at,
+    CLASS_COLORS, FAR_ALPHA, UNSEEN_COLOR, ViewOptions, box_strips, ego_label, is_current, object_color, recording_path, state_at,
     write_recording,
 )  # fmt: skip
 from test_scene import CLIP, clock, mover, write_clip
@@ -189,6 +189,7 @@ def test_log_scene_recording(tmp_path):
         "/world/ego", "/world/ego/box", "/world/ego/heading", "/world/ego/rear_axle", "/world/ego_path",
         "/world/ego_online", "/world/ego_online_path", "/world/obstacles/long", "/world/obstacles/short",
         f"/cameras/{camera}/image", f"/cameras/{camera}/boxes",
+        *(f"/plots/{e}/{q}" for e in ("ego", "ego_online") for q in ("speed", "a_long", "a_lat", "yaw_rate")),
     } <= entities  # fmt: skip
     summary = {}
     for line in store.summary().splitlines():
@@ -196,10 +197,31 @@ def test_log_scene_recording(tmp_path):
         summary.setdefault(entity, []).append((rows, line))
     rows = lambda e: sum(r for r, _ in summary[e])  # noqa: E731
     assert rows("/world/ego") == rows("/world/ego_online") == meta["n_ticks"]  # one transform per tick
+    # T022: a label per tick (plus the static box), and plots that skip the ticks without a value
+    # yet (T009): speed and yaw rate from tick 1, accelerations from tick 2.
+    assert rows("/world/ego/box") == rows("/world/ego_online/box") == meta["n_ticks"] + 1
+    for e in ("ego", "ego_online"):  # each also has one static row: the series style
+        assert rows(f"/plots/{e}/speed") == rows(f"/plots/{e}/yaw_rate") == (meta["n_ticks"] - 1) + 1
+        assert rows(f"/plots/{e}/a_long") == rows(f"/plots/{e}/a_lat") == (meta["n_ticks"] - 2) + 1
     assert any("Clear" in line for _, line in summary["/world/obstacles/short"])  # removed when its track ends
     assert not any("Clear" in line for _, line in summary["/world/obstacles/long"])
     # One frame per tick, except the last: that frame (3.0015 s) is after the scene ends (3.0 s).
     assert rows(f"/cameras/{camera}/image") == rows(f"/cameras/{camera}/boxes") == meta["n_ticks"] - 1
+
+
+def test_ego_label_shows_speed_and_acceleration():
+    row = pd.Series({"speed": 7.0987, "a_long": 0.657}).to_frame().T.itertuples().__next__()
+    assert ego_label(row) == "ego 7.1 m/s, a_long +0.7 m/s²"
+    first = pd.Series({"speed": np.nan, "a_long": np.nan}).to_frame().T.itertuples().__next__()
+    assert ego_label(first, "ego online") == "ego online ? m/s, a_long ? m/s²"
+
+
+def test_recording_path_changes_with_the_recording_version(monkeypatch):
+    from horizon_pipeline.scene import view
+
+    a = recording_path(Path("r"), CLIP, "offline", ViewOptions())
+    monkeypatch.setattr(view, "RECORDING_VERSION", view.RECORDING_VERSION + 1)
+    assert recording_path(Path("r"), CLIP, "offline", ViewOptions()) != a  # old recordings are not reused
 
 
 def test_recording_path_depends_on_the_options():
