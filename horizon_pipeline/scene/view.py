@@ -14,15 +14,9 @@ Reads only the scene files, plus the raw lidar, videos and calibration for displ
     cameras/<camera>/boxes        the same boxes, projected into that camera
 
 Timeline: `clip_time`, in seconds from the scene's t0.
-
-Each source (ego, objects, lidar, each camera) is a stream that logs one tick or frame at a time.
-`interleave` advances them in time order, so every panel fills in together from the start rather
-than one source after another.
 """
 
-import heapq
 import json
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -89,27 +83,7 @@ def object_label(row) -> str:
 # ---------------------------------------------------------------- 3D
 
 
-# ---------------------------------------------------------------- streams
-#
-# A stream logs its static parts, then yields the clip time of each item before logging it, so
-# `interleave` can pick whichever stream is earliest.
-
-
-def interleave(streams: list[Iterator[float]]) -> None:
-    """Runs the streams to the end, always advancing the one whose next item is earliest."""
-    heap = []
-    for i, stream in enumerate(streams):
-        t = next(stream, None)
-        if t is not None:
-            heapq.heappush(heap, (t, i))
-    while heap:
-        _, i = heapq.heappop(heap)
-        t = next(streams[i], None)  # logs that item, returns the time of the next
-        if t is not None:
-            heapq.heappush(heap, (t, i))
-
-
-def stream_ego(rec: rr.RecordingStream, meta: dict, ego: pd.DataFrame, path: str = "world/ego", color=EGO_COLOR) -> Iterator[float]:
+def log_ego(rec: rr.RecordingStream, meta: dict, ego: pd.DataFrame, path: str = "world/ego", color=EGO_COLOR) -> None:
     fp = meta["ego"]["footprint"]
     lo = np.array([fp["x_min"], fp["y_min"], fp["z_min"]])
     hi = np.array([fp["x_max"], fp["y_max"], fp["z_max"]])
@@ -118,17 +92,15 @@ def stream_ego(rec: rr.RecordingStream, meta: dict, ego: pd.DataFrame, path: str
     rec.log(f"{path}/rear_axle", rr.Points3D([[0, 0, 0]], radii=[0.08], colors=[color]), static=True)
     rec.log(f"{path}_path", rr.LineStrips3D([ego[XYZ].to_numpy()], colors=[color]), static=True)
     for row in ego.itertuples():
-        yield row.t_s
         clip_time(rec, row.t_s)
         rec.log(path, rr.Transform3D(translation=[row.x, row.y, row.z], quaternion=[row.qx, row.qy, row.qz, row.qw]))
 
 
-def stream_objects(rec: rr.RecordingStream, objects: pd.DataFrame, ticks: pd.Series, opts: "ViewOptions") -> Iterator[float]:
+def log_objects(rec: rr.RecordingStream, objects: pd.DataFrame, ticks: pd.Series, opts: "ViewOptions") -> None:
     """One entity per track, cleared at ticks where the track does not exist."""
     by_tick = dict(tuple(objects.groupby("tick")))
     alive: set[str] = set()
     for tick, t_s in zip(ticks.index, ticks):
-        yield t_s
         clip_time(rec, t_s)
         rows = by_tick.get(tick, objects.iloc[:0])
         for gone in alive - set(rows["track_id"]):
@@ -154,7 +126,7 @@ def height_colors(z: np.ndarray) -> np.ndarray:
     return ((1 - f) * [30, 60, 160] + f * [250, 240, 160]).astype(np.uint8)
 
 
-def stream_lidar(rec: rr.RecordingStream, clip_dir: Path, ego_source: str, t0_us: int, ticks: pd.Series, every: int) -> Iterator[float]:
+def log_lidar(rec: rr.RecordingStream, clip_dir: Path, ego_source: str, t0_us: int, ticks: pd.Series, every: int) -> None:
     """The spin whose middle is nearest each tick, every point placed with the ego pose at its own
     time (the same placement T008 counts with)."""
     reader = SpinReader(clip_dir / POINTCLOUDS)
@@ -163,7 +135,6 @@ def stream_lidar(rec: rr.RecordingStream, clip_dir: Path, ego_source: str, t0_us
     usable = np.flatnonzero((reader.starts >= poses.start) & (reader.ends <= poses.end))
     middles = (reader.starts[usable] + reader.ends[usable]) / 2
     for t_s in ticks:
-        yield t_s
         s = int(usable[np.abs(middles - (t0_us + t_s * 1e6)).argmin()])
         world = points_to_world(reader.spin(s), poses, ext_xyz, ext_rot)[::every]
         clip_time(rec, t_s)
@@ -223,7 +194,7 @@ def box_strips(cam: Camera, ego_xyz, ego_rot, boxes: pd.DataFrame, scale: float,
     return strips, colors, labels
 
 
-def stream_camera(rec: rr.RecordingStream, cam: Camera, t0_us: int, ego: pd.DataFrame, objects: pd.DataFrame, opts: ViewOptions) -> Iterator[float]:
+def log_camera(rec: rr.RecordingStream, cam: Camera, t0_us: int, ego: pd.DataFrame, objects: pd.DataFrame, opts: ViewOptions) -> None:
     frame_s = (cam.frame_us - t0_us) / 1e6
     inside = (frame_s >= ego["t_s"].iloc[0]) & (frame_s <= ego["t_s"].iloc[-1])
     if opts.all_frames:
@@ -233,7 +204,6 @@ def stream_camera(rec: rr.RecordingStream, cam: Camera, t0_us: int, ego: pd.Data
     for i, image in video_frames(cam.video, scale=opts.image_scale):
         if i not in wanted:
             continue
-        yield frame_s[i]
         clip_time(rec, frame_s[i])
         rec.log(f"cameras/{cam.name}/image", rr.Image(image).compress(jpeg_quality=80))
         strips, colors, labels = box_strips(cam, *state_at(ego, objects, frame_s[i]), opts.image_scale, opts.fade_beyond_m)
@@ -258,18 +228,17 @@ def blueprint(cameras: list[str]) -> rrb.Blueprint:
 
 
 def log_scene(rec: rr.RecordingStream, scene_dir: Path, clip_dir: Path, opts: ViewOptions = ViewOptions()) -> dict:
-    """Logs everything to `rec`, all sources together in time order; returns the scene's meta."""
+    """Logs everything to `rec`; returns the scene's meta."""
     meta, ego, objects = load_scene(scene_dir)
     ego = ego.set_index("tick", drop=False)
-    streams = [stream_ego(rec, meta, ego)]
+    log_ego(rec, meta, ego)
     if opts.compare:
         other = next(s for s in ("offline", "online") if s != meta["ego_source"])
         other_meta, other_ego, _ = load_scene(Path(scene_dir).parent / other)
-        streams.append(stream_ego(rec, other_meta, other_ego, path=f"world/ego_{other}", color=COMPARE_COLOR))
-    streams.append(stream_objects(rec, objects, ego["t_s"], opts))
+        log_ego(rec, other_meta, other_ego, path=f"world/ego_{other}", color=COMPARE_COLOR)
+    log_objects(rec, objects, ego["t_s"], opts)
     if opts.lidar:
-        streams.append(stream_lidar(rec, clip_dir, meta["ego_source"], meta["t0_us"], ego["t_s"], opts.lidar_every))
+        log_lidar(rec, clip_dir, meta["ego_source"], meta["t0_us"], ego["t_s"], opts.lidar_every)
     for name in opts.cameras:
-        streams.append(stream_camera(rec, load_camera(clip_dir, name), meta["t0_us"], ego, objects, opts))
-    interleave(streams)
+        log_camera(rec, load_camera(clip_dir, name), meta["t0_us"], ego, objects, opts)
     return meta

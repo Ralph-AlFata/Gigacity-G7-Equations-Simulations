@@ -42,8 +42,6 @@ car actually saw.
 - Layout: the 3D scene (tracking the ego) on the left; the front camera above the two cross
   cameras on the right.
 - `--ego-source` picks the scene. `--compare` adds the other ego source's box and path in red.
-- All sources are logged together in time order (`interleave`), so every panel fills in from the
-  start of the clip as the viewer loads. They are not logged one source after another.
 
 ## Assumptions
 - `rerun-sdk` is added as a dependency, pinned to 0.40.0 (released 2026-10-21).
