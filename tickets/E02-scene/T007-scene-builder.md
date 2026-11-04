@@ -2,7 +2,7 @@
 
 **Type:** Task
 **Epic:** E02
-**Status:** review
+**Status:** done
 **Depends on:** T002, T006
 
 ## Goal

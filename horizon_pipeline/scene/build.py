@@ -1,7 +1,8 @@
 """Scene builder (T007): raw clip files + an ego source -> `meta.json`, `ego.parquet`, `objects.parquet`.
 
 Schema and principles in tickets/E02-scene/README.md; the steps below follow T007's specification.
-The lidar columns (`lidar_points`, `observed`, `in_scene`) are written empty; T008 fills them.
+The lidar columns (`lidar_points`, `observed`, `in_scene`, `lidar_spin`, `lidar_dt_s`) come from
+T008 (`lidar.observe`); with `lidar=False` they are written empty.
 """
 
 import json
@@ -16,6 +17,7 @@ from scipy.spatial.transform import Rotation
 
 from horizon_pipeline.raw.store import sha256
 from horizon_pipeline.scene.frames import QUAT, XYZ, Poses, dense_end, slerp_pairs, to_local, wrap, yaw_of
+from horizon_pipeline.scene.lidar import EXTRINSICS, POINTCLOUDS, LidarRules, observe
 
 RATE_HZ = 10
 TICK_US = 1_000_000 // RATE_HZ
@@ -141,34 +143,67 @@ def sightings_to_world(obs: pd.DataFrame, poses: Poses) -> tuple[np.ndarray, Rot
     return r.apply(center) + p, r * box
 
 
-def resample_track(
-    t: np.ndarray, xyz: np.ndarray, rot: Rotation, size: np.ndarray, ticks: np.ndarray, rules: Rules
-) -> dict | None:
-    """Steps 5-6 for one track: its state at every tick where it exists.
+@dataclass
+class Track:
+    """One track's deduplicated sightings in the world frame (step 4), in time order."""
 
-    `t` must be strictly increasing (deduplicated). Returns column arrays, or None if the track
-    exists at no tick.
-    """
-    tk = ticks[(ticks >= t[0]) & (ticks <= t[-1])]
+    t: np.ndarray  # us, strictly increasing
+    xyz: np.ndarray
+    rot: Rotation
+    size: np.ndarray
+    label_class: np.ndarray
+
+    def bracket(self, q: np.ndarray):
+        """The sightings around each time in `q` (clipped to the lifetime): latest at or before (i),
+        next (j; = i on an exact hit), their spacing (us) and the fraction of the way from i to j."""
+        q = np.clip(np.asarray(q, np.int64), self.t[0], self.t[-1])
+        i = np.searchsorted(self.t, q, side="right") - 1
+        exact = self.t[i] == q
+        j = np.where(exact, i, np.minimum(i + 1, len(self.t) - 1))
+        spacing = self.t[j] - self.t[i]
+        frac = np.divide(q - self.t[i], spacing, out=np.zeros(len(q)), where=spacing > 0)
+        return i, j, exact, spacing, frac
+
+    def state_at(self, q: np.ndarray) -> tuple[np.ndarray, Rotation, np.ndarray]:
+        """Step 6: position linearly, orientation by slerp, size linearly, between the sightings
+        around each time (clipped to the lifetime)."""
+        i, j, _, _, frac = self.bracket(q)
+        return (
+            self.xyz[i] + (self.xyz[j] - self.xyz[i]) * frac[:, None],
+            slerp_pairs(self.rot[i], self.rot[j], frac),
+            self.size[i] + (self.size[j] - self.size[i]) * frac[:, None],
+        )
+
+
+def world_tracks(obs: pd.DataFrame, poses: Poses) -> dict[str, Track]:
+    """Step 4 for every sighting, grouped by track. Expects deduplicated `obs`."""
+    world_xyz, world_rot = sightings_to_world(obs, poses)
+    t = obs["timestamp_us"].to_numpy(np.int64, copy=True)
+    size = obs[["size_x", "size_y", "size_z"]].to_numpy(float, copy=True)
+    cls = obs["label_class"].to_numpy(copy=True)
+    return {
+        track: Track(t[idx], world_xyz[idx], world_rot[idx], size[idx], cls[idx])
+        for track, idx in obs.groupby("track_id", sort=True).indices.items()
+    }
+
+
+def resample_track(track: Track, ticks: np.ndarray, rules: Rules) -> dict | None:
+    """Steps 5-6 for one track: its state at every tick where it exists, or None if there is none."""
+    tk = ticks[(ticks >= track.t[0]) & (ticks <= track.t[-1])]
+    i, _, exact, spacing, _ = track.bracket(tk)
+    tk = tk[exact | (spacing <= rules.gap_bridge_s * 1e6)]
     if len(tk) == 0:
         return None
-    i = np.searchsorted(t, tk, side="right") - 1  # latest sighting at or before the tick
-    exact = t[i] == tk
-    j = np.where(exact, i, np.minimum(i + 1, len(t) - 1))
-    spacing = t[j] - t[i]
-    keep = exact | (spacing <= rules.gap_bridge_s * 1e6)
-    tk, i, j, exact, spacing = tk[keep], i[keep], j[keep], exact[keep], spacing[keep]
-    if len(tk) == 0:
-        return None
-    frac = np.divide(tk - t[i], spacing, out=np.zeros(len(tk)), where=spacing > 0)
+    i, _, exact, spacing, _ = track.bracket(tk)
+    xyz, rot, size = track.state_at(tk)
     gap = np.where(exact, 0.0, spacing / 1e6)
     return {
         "timestamp_us": tk,
         "sighting": i,
-        "xyz": xyz[i] + (xyz[j] - xyz[i]) * frac[:, None],
-        "rot": slerp_pairs(rot[i], rot[j], frac),
-        "size": size[i] + (size[j] - size[i]) * frac[:, None],
-        "last_sighting_age_s": (tk - t[i]) / 1e6,
+        "xyz": xyz,
+        "rot": rot,
+        "size": size,
+        "last_sighting_age_s": (tk - track.t[i]) / 1e6,
         "gap_s": np.where(gap > rules.gap_report_s, gap, 0.0),
     }
 
@@ -225,27 +260,23 @@ OBJECT_COLUMNS = [
     "x", "y", "z", "qx", "qy", "qz", "qw", "yaw", "length", "width", "height",
     "vx", "vy", "vz", "speed", "ax", "ay", "az", "yaw_rate",
     "rel_x", "rel_y", "rel_z", "rel_yaw", "distance",
-    "last_sighting_age_s", "gap_s", "lidar_points", "observed", "in_scene",
+    "last_sighting_age_s", "gap_s", "lidar_points", "observed", "in_scene", "lidar_spin", "lidar_dt_s",
 ]  # fmt: skip
 
 
 def objects_table(
-    obs: pd.DataFrame, poses: Poses, ticks: np.ndarray, t0_us: int, ego_xyz: np.ndarray, ego_rot: Rotation, rules: Rules
+    tracks: dict[str, Track], ticks: np.ndarray, t0_us: int, ego_xyz: np.ndarray, ego_rot: Rotation, rules: Rules
 ) -> pd.DataFrame:
-    world_xyz, world_rot = sightings_to_world(obs, poses)
-    size = obs[["size_x", "size_y", "size_z"]].to_numpy(float, copy=True)
     parts = []
-    for track, idx in obs.groupby("track_id", sort=True).indices.items():
-        state = resample_track(
-            obs["timestamp_us"].to_numpy(np.int64, copy=True)[idx], world_xyz[idx], world_rot[idx], size[idx], ticks, rules
-        )
+    for track_id, track in tracks.items():
+        state = resample_track(track, ticks, rules)
         if state is None:
             continue
         tick = (state["timestamp_us"] - ticks[0]) // TICK_US
         yaw = yaw_of(state["rot"])
         motion = derive_motion(state["xyz"], yaw, segments(tick))
-        df = pd.DataFrame({"tick": tick, "t_s": (state["timestamp_us"] - t0_us) / 1e6, "track_id": track})
-        df["label_class"] = obs["label_class"].to_numpy(copy=True)[idx][state["sighting"]]
+        df = pd.DataFrame({"tick": tick, "t_s": (state["timestamp_us"] - t0_us) / 1e6, "track_id": track_id})
+        df["label_class"] = track.label_class[state["sighting"]]
         df[XYZ] = state["xyz"]
         df[QUAT] = state["rot"].as_quat()
         df["yaw"] = wrap(yaw)
@@ -270,6 +301,8 @@ def objects_table(
     objects["lidar_points"] = pd.array([pd.NA] * len(objects), dtype="Int64")  # T008
     objects["observed"] = pd.array([pd.NA] * len(objects), dtype="boolean")
     objects["in_scene"] = pd.array([pd.NA] * len(objects), dtype="boolean")
+    objects["lidar_spin"] = pd.array([pd.NA] * len(objects), dtype="Int64")
+    objects["lidar_dt_s"] = np.nan
     return objects.sort_values(["tick", "track_id"], kind="stable").reset_index(drop=True)[OBJECT_COLUMNS]
 
 
@@ -286,7 +319,9 @@ def footprint(dim: dict) -> dict:
 # ---------------------------------------------------------------- build / write
 
 
-def build_scene(clip_dir: Path, ego_source: str, rules: Rules = Rules()) -> Scene:
+def build_scene(
+    clip_dir: Path, ego_source: str, rules: Rules = Rules(), lidar: bool = True, lidar_rules: LidarRules = LidarRules()
+) -> Scene:
     clip_dir = Path(clip_dir)
     if ego_source not in EGO_SOURCES:
         raise ValueError(f"ego_source must be one of {list(EGO_SOURCES)}, not {ego_source!r}")
@@ -299,10 +334,18 @@ def build_scene(clip_dir: Path, ego_source: str, rules: Rules = Rules()) -> Scen
     obs = obs.loc[covered].reset_index(drop=True)
     obs, n_merged = deduplicate(obs, rules)
     ego, ego_xyz, ego_rot = ego_table(poses, ticks, t0_us, rules)
-    objects = objects_table(obs, poses, ticks, t0_us, ego_xyz, ego_rot, rules)
+    tracks = world_tracks(obs, poses)
+    objects = objects_table(tracks, ticks, t0_us, ego_xyz, ego_rot, rules)
+    lidar_report = None
+    if lidar:
+        if not (clip_dir / POINTCLOUDS).is_file():
+            raise FileNotFoundError(f"{clip_dir / POINTCLOUDS} is missing: fetch the `lidar` feature, or build with lidar=False")
+        objects, lidar_report = observe(objects, tracks, poses, clip_dir, lidar_rules)
     unknown = sorted(set(objects.loc[objects["class_group"] == UNKNOWN_GROUP, "label_class"]))
     dim = load_dimensions(clip_dir)
     files = [f"{EGO_SOURCES[ego_source]}.parquet", f"{OBSTACLES}.parquet", f"{DIMENSIONS}.parquet"]
+    if lidar:
+        files += [str(POINTCLOUDS), f"{EXTRINSICS}.parquet"]
     report = {
         "sightings": n_raw,
         "sightings_outside_ego_range": int((~covered).sum()),
@@ -311,6 +354,7 @@ def build_scene(clip_dir: Path, ego_source: str, rules: Rules = Rules()) -> Scen
         "tracks_in_scene_file": int(objects["track_id"].nunique()),
         "object_rows": len(objects),
         "unknown_classes": unknown,
+        "lidar": lidar_report,
     }
     meta = {
         "clip_id": clip_dir.name,
@@ -320,7 +364,7 @@ def build_scene(clip_dir: Path, ego_source: str, rules: Rules = Rules()) -> Scen
         "n_ticks": len(ticks),
         "ego": {**dim, "rear_axle_offset": [0.0, 0.0, 0.0], "footprint": footprint(dim)},
         "class_groups": {**CLASS_GROUPS, UNKNOWN_GROUP: "any other label_class"},
-        "rules": asdict(rules),
+        "rules": {**asdict(rules), **(asdict(lidar_rules) if lidar else {})},
         "inputs": {"files": {f: sha256(clip_dir / f) for f in files}, "code": code_version()},
         "build_report": report,
     }
