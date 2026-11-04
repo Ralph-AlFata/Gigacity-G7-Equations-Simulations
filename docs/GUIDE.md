@@ -321,7 +321,117 @@ for tick, rows in objects[objects.in_scene].groupby("tick"):
 
 ---
 
-## 6. Repository map
+## 6. How the viewer works (`horizon_pipeline/scene/view.py`, `camera.py`)
+
+The viewer only **displays** the scene. It never changes it, and it decides nothing about which
+objects count.
+
+### Build, then open
+
+1. **Read** the scene files (`meta.json`, `ego.parquet`, `objects.parquet`), plus the raw lidar,
+   videos and calibration for display.
+2. **Log** every source into one recording, one after another:
+   - the ego and the boxes (under 1 s);
+   - the lidar (~12 s);
+   - each camera (~3.5 s each).
+3. **Write** the recording to `artifacts/scene/<clip_id>/<ego_source>-<options>.rrd`. It goes to a
+   `.partial` file first and is renamed only when complete.
+4. **Open** the finished file in Rerun. The whole clip is loaded at once.
+5. **Reuse** the file next time, as long as it is newer than the scene files. The `<options>` part is
+   a hash of the options, so different options get different files.
+
+### What each piece is made from
+
+| Entity | From | Notes |
+|---|---|---|
+| `world/ego` | `ego.parquet` | one transform per tick; the box is the footprint in `meta.json`, so it sits on the rear axle |
+| `world/obstacles/<track_id>` | `objects.parquet` | one box per row; cleared at ticks where the track does not exist |
+| `world/lidar` | raw spins | the spin whose **middle** is nearest the tick, each point placed with the ego pose at its own time, 1 point in 10 |
+| `cameras/<cam>/image` | `video.mp4` + `frame_timestamps` | the frame nearest each tick, at that frame's own time, half resolution |
+| `cameras/<cam>/boxes` | `objects.parquet` + calibration | the same boxes, projected into the camera |
+
+### How a box gets onto the video
+
+1. **Move to the frame's time.** Take the frame's timestamp, which can be up to ~11 ms off the tick.
+   Interpolate the ego pose and every box between the two neighbouring ticks: position linear,
+   rotation slerp, the same as the scene build.
+2. **Make the box edges.** Each box edge is sampled at 16 points, so the fisheye curvature shows.
+3. **Transform** each point from world to rig (inverse ego pose), then from rig to camera (inverse
+   `sensor_extrinsics`). The camera frame has z forward, x right and y down.
+4. **Project.** Use the f-theta lens model:
+   - θ is the angle from the optical axis;
+   - `angle_to_pixeldist_poly(θ)` gives the radius in pixels from the principal point;
+   - the direction is that of (x, y).
+   This is NVIDIA's SDK formula, and a test checks the two match.
+5. **Cut at the field of view.** Points beyond `max_angle` (77° on the wide cameras) or behind the
+   camera are dropped. Each edge is cut there, not wrapped around.
+
+### Reading the labels
+
+A label reads `<track_id> <class> <speed> m/s <N> pts`.
+- **Speed** is the object's derived speed at that tick.
+- **N** is T008's lidar count. It comes from the spin whose sweep crossed **that object** nearest
+  the tick, with the box placed at the crossing moment.
+- **The drawn dots won't match N exactly.** The 3D view draws the spin whose *middle* is nearest the
+  tick, thinned to 1 point in 10.
+
+### Limits
+
+- **Rolling shutter is not modeled.** The sensor reads top to bottom over 30 ms, so a fast crossing
+  object can look a little off near the top or bottom of the image.
+- **Close objects look tall.** A box 1 m from a camera shows its top far above the visible roofline:
+  the box includes the mirrors, and a real roof curves inward. That's geometry, not an error.
+
+---
+
+## 7. Trying new clips
+
+The whole pipeline runs on any clip that has the inputs. To try new clips, from picking them to
+checking them:
+
+```sh
+# 1. Pick clips at random among those that have everything the build and the viewer need.
+uv run horizon-catalog select \
+    --require scene camera_front_wide_120fov:video camera_cross_left_120fov:video camera_cross_right_120fov:video \
+    --limit 3 --seed 20261104 --name random3_20261104
+
+# 2. Download them (~1 GB for 3 clips, mostly lidar). Check the size first with --dry-run.
+uv run horizon-fetch --clips-file data/clip_lists/random3_20261104.txt \
+    --features scene camera_front_wide_120fov:video camera_cross_left_120fov:video camera_cross_right_120fov:video
+
+# 3. Build the scenes (~20 s per clip and source with lidar).
+uv run horizon-scene build --clips-file data/clip_lists/random3_20261104.txt --ego-source both
+
+# 4. Look at each one.
+uv run horizon-scene view --clip b6cb8b12-8b36-49c2-8609-63c4e2958e28
+```
+
+The clips picked on 2026-11-04 with seed 20261104:
+
+| Clip | Where and when | Platform |
+|---|---|---|
+| `b6cb8b12-8b36-49c2-8609-63c4e2958e28` | Germany, January, 03:00 (night) | hyperion_8.1 |
+| `ca823746-c767-48d9-bc0d-008ce50f6497` | Croatia, August, 19:00 | hyperion_8.1 |
+| `23958e60-dbf9-41fa-b927-53960a114276` | United States, January, 00:00 (night) | **hyperion_8** (our first two clips are 8.1) |
+
+**What to check on a new clip:**
+
+- **The build summary.**
+  - The parked-car position RMS should be about 0.2 m: the transforms agree with themselves.
+  - The observed share at 4–20 m should be above 95%.
+  - No unknown classes.
+  - The build must not stop on a duplicate.
+- **The viewer:**
+  - boxes sit on their cars and people in all three cameras, and move with them;
+  - parked cars stay still in 3D;
+  - gray boxes are hidden behind something.
+- **What would point to a problem:**
+  - Boxes offset the same way in every frame: calibration, or a different camera model.
+  - Boxes that trail behind moving objects: timing.
+  - Many gray boxes in the open: the lidar step.
+
+
+## 8. Repository map
 
 ```
 horizon_pipeline/
@@ -359,7 +469,7 @@ prints the numbers recorded in its ticket.
 
 ---
 
-## 7. Tests
+## 9. Tests
 
 ```sh
 uv run pytest                          # everything (~1 min)
@@ -380,7 +490,7 @@ Real-data tests are **skipped** (not failed) when `data/raw/` is missing.
 
 ---
 
-## 8. How work is organised
+## 10. How work is organised
 
 - Every change is a ticket in `tickets/`. The tracker table is in `tickets/README.md`.
 - Ticket types:
@@ -394,7 +504,7 @@ Real-data tests are **skipped** (not failed) when `data/raw/` is missing.
 
 ---
 
-## 9. Known limits and open questions
+## 11. Known limits and open questions
 
 - **Visibility uses the lidar, not the cameras.**
   - The lidar sees 360°. Alpamayo only uses front-facing and cross cameras.
