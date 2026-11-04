@@ -117,6 +117,32 @@ and the lidar in `data/raw/<clip_id>/` (the `scene` preset). The lidar step deco
 (~20 s per clip and ego source); `--no-lidar` skips it and leaves those columns empty. The build
 stops if two rows of a track less than 20 ms apart disagree.
 
+## Viewing scenes (`horizon-scene view`)
+
+Plays a built scene in Rerun: the scene in 3D on the left, the camera videos on the right with
+the scene's boxes drawn on them. One timeline, `clip_time`, drives all of it.
+
+```sh
+# The camera videos first (the three Alpamayo uses, ~95 MB for both clips).
+uv run horizon-fetch --clips-file clips_selected_train.txt \
+    --features camera_front_wide_120fov:video camera_cross_left_120fov:video camera_cross_right_120fov:video
+
+# Open the viewer.
+uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d
+
+# Or save a recording (~150-250 MB) and open it later.
+uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d --compare --save artifacts/scene/b789fab8.rrd
+uv run rerun artifacts/scene/b789fab8.rrd
+```
+
+- **Box colors:** boxes are colored by class group (vehicle blue, vru orange, static green) when
+  `in_scene`, and gray when the object exists but the lidar does not see it.
+- **Lidar:** the lidar shows the spin nearest each tick, thinned to every 10th point
+  (`--lidar-every`, `--no-lidar`).
+- **Cameras:** `--cameras` picks the cameras (none for 3D only). `--all-frames` shows all 30 Hz
+  instead of the frame nearest each tick.
+- **Ego sources:** `--compare` adds the other ego source's box and path in red.
+
 ## Tests
 
 ```sh

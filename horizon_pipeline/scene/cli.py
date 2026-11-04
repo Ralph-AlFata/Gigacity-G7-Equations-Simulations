@@ -1,12 +1,17 @@
-"""`horizon-scene`: build scenes from raw clip files into data/scene/<clip_id>/<ego_source>/."""
+"""`horizon-scene`: build scenes from raw clip files into data/scene/<clip_id>/<ego_source>/, and
+view them in Rerun next to the camera videos."""
 
 import argparse
 import sys
 from pathlib import Path
 
+import rerun as rr
+
 from horizon_pipeline.raw.fetch import read_clip_list
 from horizon_pipeline.scene.build import DEFAULT_OUT, DEFAULT_RAW, EGO_SOURCES, DuplicateError, build_scene, write_scene
+from horizon_pipeline.scene.camera import ALPAMAYO_CAMERAS
 from horizon_pipeline.scene.checks import parked_spread
+from horizon_pipeline.scene.view import ViewOptions, blueprint, log_scene
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -19,7 +24,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     build.add_argument("--raw", type=Path, default=DEFAULT_RAW)
     build.add_argument("--out", type=Path, default=DEFAULT_OUT)
     build.add_argument("--no-lidar", action="store_true", help="leave the lidar columns empty (T008)")
+    view = sub.add_parser("view", help="play a built scene in Rerun next to the camera videos")
+    view.add_argument("--clip", required=True, metavar="CLIP_ID")
+    view.add_argument("--ego-source", choices=list(EGO_SOURCES), default="offline")
+    view.add_argument("--compare", action="store_true", help="also draw the other ego source's box and path")
+    view.add_argument("--cameras", nargs="*", default=ALPAMAYO_CAMERAS, metavar="CAMERA",
+                      help="cameras to show (default: the three Alpamayo uses); none for 3D only")
+    view.add_argument("--all-frames", action="store_true", help="every video frame (30 Hz), not only the one nearest each tick")
+    view.add_argument("--no-lidar", action="store_true", help="leave out the lidar points")
+    view.add_argument("--lidar-every", type=int, default=ViewOptions.lidar_every, help="keep every n-th lidar point (default 10)")
+    view.add_argument("--save", type=Path, metavar="FILE.rrd", help="write a recording instead of opening the viewer")
+    view.add_argument("--raw", type=Path, default=DEFAULT_RAW)
+    view.add_argument("--scenes", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args(argv)
+    if args.command == "view":
+        return args
     if args.clips_file:
         args.clips += read_clip_list(args.clips_file)
     if not args.clips:
@@ -30,6 +49,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    return view(args) if args.command == "view" else build(args)
+
+
+def view(args: argparse.Namespace) -> int:
+    scene_dir = args.scenes / args.clip / args.ego_source
+    if not (scene_dir / "meta.json").is_file():
+        print(f"no scene in {scene_dir}: run `horizon-scene build --clips {args.clip} --ego-source {args.ego_source}`", file=sys.stderr)
+        return 1
+    clip_dir = args.raw / args.clip
+    missing = [c for c in args.cameras if not (clip_dir / c / "video.mp4").is_file()]
+    if missing:
+        print(f"no video for {', '.join(missing)}: fetch with `horizon-fetch --clips {args.clip} --features "
+              + " ".join(f"{c}:video" for c in missing) + "`, or pick --cameras", file=sys.stderr)
+        return 1
+    opts = ViewOptions(lidar=not args.no_lidar, lidar_every=args.lidar_every, cameras=args.cameras,
+                       all_frames=args.all_frames, compare=args.compare)  # fmt: skip
+    rec = rr.RecordingStream("horizon-scene", recording_id=f"{args.clip}-{args.ego_source}")
+    if args.save:
+        args.save.parent.mkdir(parents=True, exist_ok=True)
+        rec.save(args.save, default_blueprint=blueprint(args.cameras))
+    else:
+        rec.spawn(default_blueprint=blueprint(args.cameras))
+    log_scene(rec, scene_dir, clip_dir, opts)
+    rec.flush()
+    if args.save:
+        print(f"wrote {args.save}; open it with `uv run rerun {args.save}`")
+    return 0
+
+
+def build(args: argparse.Namespace) -> int:
     sources = list(EGO_SOURCES) if args.ego_source == "both" else [args.ego_source]
     for clip in args.clips:
         for source in sources:

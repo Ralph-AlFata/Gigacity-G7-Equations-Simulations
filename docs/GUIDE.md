@@ -1,14 +1,13 @@
 # Pipeline guide
 
-What the pipeline does so far (tickets T001–T008), how to run it, and what each part produces.
+What the pipeline does so far (tickets T001–T008 and T010), how to run it, and what each part produces.
 The README has the command reference. This guide explains how the pieces fit together.
 
 **Status (2026-11-04):**
 - E01 (raw data) is done.
-- E02 (scenes) is done through T008, which is in review.
+- E02 (scenes) is done through T008. T010 (the Rerun viewer) is in review.
 - Still to come:
   - T009: derived ego motion vs online egomotion.
-  - T010: Rerun viewer.
   - E03: references, the H solver and the replay.
 
 ---
@@ -35,7 +34,10 @@ ego car is and which objects are around it and actually visible. So far the pipe
      objects.parquet  one row per (tick, object): pose, motion, relative pose, lidar visibility
           │
           ▼
- (next) Rerun viewer (T010) and H solver / replay (E03)
+ horizon-scene view → Rerun: the scene in 3D next to the real camera videos, boxes drawn on them
+          │
+          ▼
+ (next) H solver / replay (E03)
 ```
 
 ---
@@ -71,7 +73,12 @@ uv run horizon-fetch --clips-file clips_selected_train.txt --features scene
 # 3. build the scenes (offline + online ego poses, ~20 s per clip and source)
 uv run horizon-scene build --clips-file clips_selected_train.txt --ego-source both
 
-# 4. run the tests (~1 min; the real-data tests run only if data/raw/ is filled)
+# 4. look at it: the scene in 3D next to the camera videos (fetch the videos once, ~95 MB)
+uv run horizon-fetch --clips-file clips_selected_train.txt \
+    --features camera_front_wide_120fov:video camera_cross_left_120fov:video camera_cross_right_120fov:video
+uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d
+
+# 5. run the tests (~1 min; the real-data tests run only if data/raw/ is filled)
 uv run pytest
 ```
 
@@ -153,6 +160,45 @@ For each clip and source it prints a summary:
 - the observed share by class and by distance band.
 
 It refuses to build if two rows of the same track less than 20 ms apart disagree.
+
+### `horizon-scene view`: watch a scene next to the real video (T010)
+
+```sh
+uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d              # opens the viewer
+uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d --compare \
+    --save artifacts/scene/b789fab8.rrd                                            # or save a recording
+uv run rerun artifacts/scene/b789fab8.rrd                                          # ...and open it later
+```
+
+What you see, all on one timeline (`clip_time`, play, pause and scrub):
+
+| Panel | Shows |
+|---|---|
+| left: `scene` (3D, follows the ego) | the ego box, heading and path; every existing object box; the lidar spin nearest the tick |
+| right: the three cameras | the real video frames, with the scene's boxes drawn on them |
+
+- **Box colors:** vehicles are blue, VRUs orange and static objects green when the object is
+  `in_scene`. Gray means it exists but the lidar does not see it. Clicking a box shows its label:
+  track ID, class, speed and lidar points.
+- **Drawing boxes on the video:**
+  - Each box is moved to the video frame's own time (position linear, rotation slerp), then from
+    world to rig to camera.
+  - It is projected with the camera's f-theta lens model, following NVIDIA's SDK formula
+    (`camera.py`).
+- **What to look for:**
+  - Boxes should sit on their cars and people, and move with them.
+  - Gray boxes should be hidden behind something.
+- **Options:**
+
+  | Option | Effect |
+  |---|---|
+  | `--compare` | adds the online ego source's box and path in red |
+  | `--all-frames` | 30 Hz video instead of one frame per tick |
+  | `--cameras` | picks cameras (`--cameras` with no name gives 3D only) |
+  | `--lidar-every N` | changes how much lidar is drawn |
+  | `--no-lidar` | leaves the lidar out |
+
+- **Cost:** a saved recording is ~150–250 MB and takes 25–55 s. Most of that is lidar.
 
 ---
 
@@ -281,7 +327,9 @@ horizon_pipeline/
     build.py          grid, de-dup, tracks, resampling, derived motion, tables, write
     lidar.py          spin decoding, point placement, sweep timing, box counts, in_scene
     checks.py         parked-object stability check
-    cli.py            horizon-scene
+    camera.py         f-theta projection, camera poses, video decoding
+    view.py           the Rerun view (3D scene, camera frames, boxes on the video)
+    cli.py            horizon-scene (build, view)
 scripts/              one-off spike scripts that print the evidence quoted in tickets
   spike_t004_egomotion.py     online vs offline egomotion
   spike_t005_lidar.py         lidar format, frame, timing, motion compensation
@@ -290,6 +338,7 @@ tests/                pytest; synthetic tests always run, real-data tests need d
 tickets/              the project tracker (epics, tickets, decisions, evidence)
 old/                  the previous pipeline, reference only
 data/                 not in git: raw/, scene/, clip_lists/
+artifacts/            not in git: saved Rerun recordings
 ```
 
 Run a spike script with `uv run python scripts/spike_t005_lidar.py [clip_id ...]`. Each one
@@ -311,6 +360,7 @@ uv run pytest -k lidar                 # by name
 | `test_raw_data_checks.py` | fetched raw files match the old copies in `data/pai_selected_train/` |
 | `test_scene.py` | synthetic clips with known answers: exact frames, offset clocks, gaps, lifetimes, duplicates |
 | `test_lidar.py` | box counting, per-point placement, sweep timing, and an end-to-end fake lidar with a moving car |
+| `test_view.py` | f-theta projection equals NVIDIA's SDK; boxes land where they should in a camera; interpolation between ticks; a synthetic clip with a video recorded to `.rrd` and read back |
 | `test_scene_real.py` | the real clips: grid and columns, parked cars stay still, no impossible jumps, lidar columns, near objects observed |
 
 Real-data tests are **skipped** (not failed) when `data/raw/` is missing.
@@ -335,9 +385,12 @@ Real-data tests are **skipped** (not failed) when `data/raw/` is missing.
 
 - **Visibility uses the lidar, not the cameras.**
   - The lidar sees 360°. Alpamayo only uses front-facing and cross cameras.
+  - The lidar sits on the roof at 1.9 m, so it also sees over parked cars that block a camera at
+    0.8 m. The viewer shows such cases.
   - Whether H should count only objects a camera could see is still open.
-- **`lidar_min_points = 5` is a parameter.** It is stored in `meta.json` and should be tuned once the
-  Rerun view exists (T010).
+- **`lidar_min_points = 5` is a parameter.** It is stored in `meta.json`. Tune it by looking at the
+  viewer.
+- **The camera overlay ignores the rolling shutter.** The sensor reads top to bottom over 30 ms.
 - **Derived ego motion is not yet checked** against the vehicle's own measurements (T009).
 - **Edge-tick timing:** in the first and last 0.1 s of a clip, the lidar spin can be up to ~97 ms from
   the tick, because there is no spin on one side.

@@ -15,6 +15,7 @@ dependencies = [
     "huggingface_hub>=0.28",
     "physical_ai_av>=0.2.3",
     "dracopy>=2.2.0",
+    "rerun-sdk==0.40.0",
 ]
 
 [project.scripts]
