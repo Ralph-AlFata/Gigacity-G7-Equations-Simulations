@@ -75,3 +75,4 @@ checklist item inside the ticket, not a nested folder.
 | T017 | Task | Rerun view of the horizon | E03 | todo | T010, T014 |
 | T018 | Decision | What the truth check validates | E03 | done | none |
 | T019 | Experiment | Do the object bounds hold on our scenes? | E03 | todo | T008, T009, T013 |
+| T020 | Bug | Duplicate check is too strict for distant objects | E02 | todo | T007 |
