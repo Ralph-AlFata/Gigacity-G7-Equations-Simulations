@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import rerun as rr
+import rerun.blueprint as rrb
 from scipy.signal import savgol_filter
 from scipy.spatial.transform import Rotation
 
@@ -227,11 +228,23 @@ def slug(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_")
 
 
+def layout() -> rrb.Blueprint:
+    """One row per quantity: recorded and derived values on the left, their errors on the right."""
+    rows = [
+        rrb.Horizontal(
+            rrb.TimeSeriesView(origin=f"plots/{q}", contents=["$origin/**", "- $origin/error/**"], name=f"{q} ({UNITS[q]})"),
+            rrb.TimeSeriesView(origin=f"plots/{q}/error", name=f"{q} error ({UNITS[q]})"),
+        )
+        for q in QUANTITIES
+    ]
+    return rrb.Blueprint(rrb.Vertical(*rows), collapse_panels=True)
+
+
 def plot(clip: str, t_s: np.ndarray, recorded: pd.DataFrame, series: dict[str, pd.DataFrame]) -> Path:
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / f"{clip}.rrd"
     rec = rr.RecordingStream("horizon-t009", recording_id=clip)
-    rec.save(path)
+    rec.save(path, default_blueprint=layout())
     for q in QUANTITIES:
         rec.send_columns(f"plots/{q}/recorded", indexes=[rr.TimeColumn(TIMELINE, duration=t_s)],
                          columns=rr.Scalars.columns(scalars=recorded[q].to_numpy()))  # fmt: skip
