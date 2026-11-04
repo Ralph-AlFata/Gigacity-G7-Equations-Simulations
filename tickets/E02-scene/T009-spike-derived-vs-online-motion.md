@@ -2,7 +2,7 @@
 
 **Type:** Spike
 **Epic:** E02
-**Status:** review
+**Status:** done
 **Depends on:** T007
 **Timebox:** half a day
 
@@ -239,7 +239,7 @@ Units are m/s, m/s² and °/s. "Near" is under 20 m, "mid" 20–40 m, "far" over
   2. **Lidar observability (T008):** this is a sensor reading. It uses the spin crossing nearest the
      tick, up to about 50 ms after it, so it **must change**: use the latest crossing at or before the
      tick, which makes readings 0–100 ms old. The box the points are counted against can stay the
-     true interpolated box, since that is environment. This needs a new ticket (T008 follow-up).
+     true interpolated box, since that is environment. Done in T021.
 - **T012:**
   - online's clock offset to offline is not constant (−35 to +55 ms over 5 clips), so it must not be
     hard-coded;

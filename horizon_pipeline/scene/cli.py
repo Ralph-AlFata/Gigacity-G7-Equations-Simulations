@@ -117,7 +117,8 @@ def build(args: argparse.Namespace) -> int:
             )
             if r["lidar"]:
                 print(f"  lidar: {r['lidar']['observed_share'] * 100:.1f}% of object rows observed; "
-                      f"crossing within {r['lidar']['lidar_dt_s_max_abs'] * 1e3:.0f} ms of the tick")
+                      f"latest crossing at most {r['lidar']['lidar_dt_s_max_abs'] * 1e3:.0f} ms before the tick; "
+                      f"{r['lidar']['rows_without_reading']} rows before any crossing")
                 for key, v in r["lidar"]["by_class_and_distance"].items():
                     print(f"    {key:<18} {v['share'] * 100:5.1f}% of {v['rows']}")
     return 0

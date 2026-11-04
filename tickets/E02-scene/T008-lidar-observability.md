@@ -24,8 +24,10 @@ only when it exists and the lidar actually hits it.
   Then express it in the ego frame at the tick. One pose per spin misplaces points by up to v × 100 ms.
 - **Which spin, per object.** The sweep crosses an object at one moment per spin, and the
   object's label is stamped with that moment (T005: within 5 ms for 99% of sightings). For each
-  (tick, object), use the spin whose sweep crossed the object nearest to the tick. Record that time
-  difference per row (at most ~50 ms).
+  (tick, object), use the latest spin whose sweep crossed the object at or before the tick, and only
+  its points recorded by the tick. This was changed by T021 (2026-11-04) so the reading is causal;
+  it was the nearest crossing, up to ~50 ms after the tick. Record that time difference per row
+  (0 to −100 ms).
 - **Point count.** For every existing object at the tick, count that spin's points inside its 3D box,
   placed at the crossing time (interpolated from the track's sightings, not the box at the tick: a
   moving object can be 50 ms = 0.75 m at 15 m/s from it), enlarged

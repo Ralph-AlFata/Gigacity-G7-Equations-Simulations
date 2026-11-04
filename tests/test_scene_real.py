@@ -65,20 +65,22 @@ def test_objects_move_smoothly(scene):
 
 
 def test_lidar_columns_are_filled(lidar_scene):
+    """Every row has a reading, except before the sweep has first crossed the object (T021)."""
     o = lidar_scene.objects
-    assert not o[["lidar_points", "observed", "in_scene", "lidar_spin", "lidar_dt_s"]].isna().any().any()
-    assert (o["in_scene"] == o["observed"]).all()
-    assert (o["observed"] == (o["lidar_points"] >= 5)).all()
-
-
-def test_lidar_crossing_is_within_half_a_spin_of_the_tick(lidar_scene):
-    """Except within 0.1 s of the first spin start or the last spin end, where a tick has spins
-    on one side only."""
-    o = lidar_scene.objects
+    read = o["lidar_spin"].notna()
     spins = SpinReader(RAW / lidar_scene.meta["clip_id"] / POINTCLOUDS)
-    inner = o["t_s"].between((spins.starts[0] + 100_000) / 1e6, (spins.ends[-1] - 100_000) / 1e6)
-    assert inner.mean() > 0.98
-    assert o.loc[inner, "lidar_dt_s"].abs().max() <= 0.051
+    assert (o.loc[~read, "t_s"] <= (spins.starts[0] + 100_000) / 1e6).all()
+    assert not o.loc[read, ["lidar_points", "lidar_dt_s"]].isna().any().any()
+    assert o.loc[~read, ["lidar_points", "lidar_dt_s"]].isna().all().all() and not o.loc[~read, "observed"].any()
+    assert not o[["observed", "in_scene"]].isna().any().any()
+    assert (o["in_scene"] == o["observed"]).all()
+    assert (o.loc[read, "observed"] == (o.loc[read, "lidar_points"] >= 5)).all()
+
+
+def test_lidar_reading_is_the_latest_crossing_before_the_tick(lidar_scene):
+    """T021: causal, so the crossing used is at most one spin before the tick and never after it."""
+    dt = lidar_scene.objects["lidar_dt_s"].dropna()
+    assert dt.max() <= 0 and dt.min() >= -0.101
 
 
 def test_near_objects_are_observed(lidar_scene):
