@@ -62,9 +62,9 @@ checklist item inside the ticket, not a nested folder.
 | T005 | Spike | Lidar format: columns, frame, timing, size | E02 | done | T002 |
 | T006 | Spike | Is the rig origin the rear-axle midpoint? | E02 | done | T002 |
 | T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | E02 | done | T002, T006 |
-| T008 | Task | Lidar observability and `in_scene` | E02 | review | T005, T007 |
+| T008 | Task | Lidar observability and `in_scene` | E02 | done | T005, T007 |
 | T009 | Spike | Derived ego motion vs online egomotion | E02 | todo | T007 |
-| T010 | Task | Stream a scene to Rerun | E02 | todo | T007 |
+| T010 | Task | Stream a scene to Rerun | E02 | review | T007 |
 | E03 | Epic | Horizon replay | — | todo | E02 |
 | T011 | Task | Reference format + recorded-path reference | E03 | todo | T007 |
 | T012 | Task | Alpamayo trajectory import | E03 | todo | T011 |

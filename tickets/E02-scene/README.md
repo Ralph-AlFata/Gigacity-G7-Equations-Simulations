@@ -116,10 +116,10 @@ The equations read only rows with `in_scene = true`.
 | T005 | Spike | Lidar format: columns, frame, timing, size | done |
 | T006 | Spike | Is the rig origin the rear-axle midpoint? | done |
 | T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | done |
-| T008 | Task | Lidar observability and `in_scene` | review |
+| T008 | Task | Lidar observability and `in_scene` | done |
 | T009 | Spike | Derived ego motion vs online egomotion | todo |
-| T010 | Task | Stream a scene to Rerun | todo |
-| T020 | Bug | Duplicate check is too strict for distant objects | todo |
+| T010 | Task | Stream a scene to Rerun | done |
+| T020 | Bug | Duplicate check is too strict for distant objects | in-progress |
 
 ## Notes
 Measured on our two clips (old raw files):
