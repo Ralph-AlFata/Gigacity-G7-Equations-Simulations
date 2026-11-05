@@ -28,8 +28,8 @@ read this scene; they never decide which objects count. That decision is made he
     car would know them live:
     - derived velocity, acceleration and yaw rate are causal (T009), and NaN where nothing earlier
       exists;
-    - lidar observability is a sensor reading, so it must use a sweep at or before the tick (to fix:
-      see T009 Follow-ups).
+    - lidar observability is a sensor reading, so it uses the latest sweep at or before the tick
+      and only points recorded by then (T021).
 - **Ego source:** `egomotion.offline` for scene geometry (T004: the labels match it in space and
   time). Online `egomotion` scenes can still be built for comparison, but are never mixed with offline.
 - **3D everywhere**, plus planar x, y, yaw for the equations.
@@ -105,11 +105,11 @@ but is not observed are kept, with `in_scene = false`, so we can see why it was 
 | `distance` | m | planar center-to-center distance from the ego rear axle |
 | `last_sighting_age_s` | s | time since the last sighting at or before this tick |
 | `gap_s` | s | 0 if bracketed by normal sightings, else the length of the bridged skip |
-| `lidar_points` | int | lidar points inside the box (with margin, above the ground band), from the spin whose sweep crossed the object nearest this tick, with the box placed at that crossing time (T008) |
-| `observed` | bool | lidar_points ≥ lidar_min_points |
+| `lidar_points` | int | lidar points inside the box (with margin, above the ground band), from the latest spin whose sweep crossed the object at or before this tick, counting only points recorded by the tick, with the box placed at that crossing time (T008, T021). NA before the first crossing |
+| `observed` | bool | lidar_points ≥ lidar_min_points; false before the first crossing |
 | `in_scene` | bool | exists (always true for a row) AND observed |
-| `lidar_spin` | int | the spin used for `lidar_points` |
-| `lidar_dt_s` | s | that spin's crossing time minus the tick (within ±0.05 s except at the clip ends) |
+| `lidar_spin` | int | the spin used for `lidar_points`; NA before the first crossing |
+| `lidar_dt_s` | s | that spin's crossing time minus the tick, in [−0.1, 0] s (T021); NaN before the first crossing |
 
 The equations read only rows with `in_scene = true`.
 
@@ -128,9 +128,10 @@ The equations read only rows with `in_scene = true`.
 | T006 | Spike | Is the rig origin the rear-axle midpoint? | done |
 | T007 | Task | Scene builder: grid, ego, objects, frames, derived motion | done |
 | T008 | Task | Lidar observability and `in_scene` | done |
-| T009 | Spike | Derived ego motion vs online egomotion | review |
+| T009 | Spike | Derived ego motion vs online egomotion | done |
 | T010 | Task | Stream a scene to Rerun | done |
 | T020 | Bug | Duplicate check is too strict for distant objects | done |
+| T021 | Task | Causal lidar observability | review |
 
 ## Notes
 Measured on our two clips (old raw files):

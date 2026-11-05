@@ -5,8 +5,10 @@ Facts this relies on (T005):
   (absolute us, clip clock), so every point is placed with the ego pose at that time;
 - the sweep crosses an object once per spin, and the object's label is stamped with that moment.
 
-For each (tick, object) row we take the spin whose sweep crossed the object nearest to the tick,
-place the object's box at that crossing time, and count that spin's points inside the box.
+For each (tick, object) row we take the latest spin whose sweep crossed the object at or before the
+tick, place the object's box at that crossing time, and count that spin's points inside the box,
+using only points recorded by the tick. The reading is causal, like a live sensor (T021). The box
+is the true world state, which may be built from later sightings (E02 principles).
 """
 
 from dataclasses import dataclass
@@ -98,13 +100,11 @@ def sweep_profile(spin: Spin) -> np.ndarray:
 
 def assign_spins(t_us: np.ndarray, sweep_us: np.ndarray, starts: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """For rows at times `t_us` whose objects the sweep passes `sweep_us` after a spin start, the
-    spin whose crossing is nearest each row's time, and that crossing time (us)."""
-    k = np.clip(np.searchsorted(starts, t_us - sweep_us) - 1, 0, len(starts) - 1)
-    candidates = np.clip(k[:, None] + np.array([0, 1, 2]), 0, len(starts) - 1)
-    crossing = starts[candidates] + sweep_us[:, None]
-    best = np.abs(crossing - t_us[:, None]).argmin(1)
-    rows = np.arange(len(t_us))
-    return candidates[rows, best], crossing[rows, best].round().astype(np.int64)
+    latest spin whose crossing is at or before each row's time, and that crossing time (us).
+    -1 (and crossing -1) where no spin has crossed the object yet."""
+    k = np.searchsorted(starts, t_us - sweep_us, side="right") - 1
+    crossing = np.where(k >= 0, (starts[np.maximum(k, 0)] + sweep_us).round(), -1).astype(np.int64)
+    return k, crossing
 
 
 def count_in_box(points: np.ndarray, center: np.ndarray, rot: Rotation, size: np.ndarray, rules: LidarRules) -> int:
@@ -147,31 +147,38 @@ def observe(
     az_bin = (np.degrees(np.arctan2(in_sensor[:, 1], in_sensor[:, 0])) // 1).astype(int) % 360
     tick_us = (objects["t_s"].to_numpy(float) * 1e6).round().astype(np.int64)
     k, crossing = assign_spins(tick_us, profile[az_bin], starts)
-    spin_index = usable[k]
+    read = k >= 0  # rows the sweep has already crossed: they have a reading
+    spin_index = np.where(read, usable[np.maximum(k, 0)], -1)
 
     # The box at the crossing time, interpolated from the track's own sightings.
     center = np.zeros((len(objects), 3))
-    quat = np.zeros((len(objects), 4))
+    quat = np.tile([0.0, 0.0, 0.0, 1.0], (len(objects), 1))
     size = np.zeros((len(objects), 3))
     for track_id, rows in objects.groupby("track_id").indices.items():
-        xyz, rot, sz = tracks[track_id].state_at(crossing[rows])
-        center[rows], quat[rows], size[rows] = xyz, rot.as_quat(), sz
+        rows = rows[read[rows]]
+        if len(rows):
+            xyz, rot, sz = tracks[track_id].state_at(crossing[rows])
+            center[rows], quat[rows], size[rows] = xyz, rot.as_quat(), sz
 
     counts = np.zeros(len(objects), np.int64)
     reach = np.linalg.norm(size / 2 + rules.lidar_box_margin_m, axis=1)
-    for s in np.unique(spin_index):
+    for s in np.unique(spin_index[read]):
         rows = np.flatnonzero(spin_index == s)
-        world = points_to_world(reader.spin(int(s)), poses, ext_xyz, ext_rot)
+        spin = reader.spin(int(s))
+        world = points_to_world(spin, poses, ext_xyz, ext_rot)
         tree = cKDTree(world)
         for row, near in zip(rows, tree.query_ball_point(center[rows], reach[rows])):
+            near = [n for n in near if spin.t[n] <= tick_us[row]]  # a point recorded after the tick is not known yet
             if near:
                 counts[row] = count_in_box(world[near], center[row], Rotation.from_quat(quat[row]), size[row], rules)
 
-    objects["lidar_points"] = pd.array(counts, dtype="Int64")
-    objects["observed"] = pd.array(counts >= rules.lidar_min_points, dtype="boolean")
+    lidar_points, lidar_spin = pd.array(counts, dtype="Int64"), pd.array(spin_index, dtype="Int64")
+    lidar_points[~read] = lidar_spin[~read] = pd.NA  # no reading yet
+    objects["lidar_points"] = lidar_points
+    objects["observed"] = pd.array(read & (counts >= rules.lidar_min_points), dtype="boolean")
     objects["in_scene"] = objects["observed"].copy()  # every row already exists (T007)
-    objects["lidar_spin"] = spin_index.astype(np.int64)
-    objects["lidar_dt_s"] = (crossing - tick_us) / 1e6
+    objects["lidar_spin"] = lidar_spin
+    objects["lidar_dt_s"] = np.where(read, (crossing - tick_us) / 1e6, np.nan)
     return objects, observability_report(objects)
 
 
@@ -186,6 +193,7 @@ def observability_report(objects: pd.DataFrame) -> dict:
     table = observed.groupby([objects["class_group"], band], observed=True).agg(["mean", "size"])
     return {
         "observed_share": float(observed.mean()),
+        "rows_without_reading": int(objects["lidar_spin"].isna().sum()),
         "lidar_dt_s_max_abs": float(objects["lidar_dt_s"].abs().max()),
         "by_class_and_distance": {
             f"{g} {b}": {"share": round(float(r["mean"]), 4), "rows": int(r["size"])} for (g, b), r in table.iterrows()

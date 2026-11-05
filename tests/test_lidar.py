@@ -84,11 +84,12 @@ def test_sweep_profile_recovers_a_clockwise_sweep():
     assert np.abs(profile - expected)[~seam].max() < 400  # us
 
 
-def test_assign_spins_takes_the_nearest_crossing():
+def test_assign_spins_takes_the_latest_crossing_at_or_before_the_tick():
+    """T021: a sensor reading is causal. Crossings here are at 70, 170, 270 ms, ..."""
     starts = np.arange(0, 1_000_000, 100_000)
-    k, crossing = assign_spins(np.array([150_000, 100_000, 0]), np.array([70_000.0, 70_000.0, 70_000.0]), starts)
-    assert k.tolist() == [1, 0, 0]  # 170 ms is 20 ms from 150 ms; 70 ms is 30 ms from 100 ms
-    assert crossing.tolist() == [170_000, 70_000, 70_000]
+    k, crossing = assign_spins(np.array([150_000, 100_000, 170_000, 169_999, 0]), np.full(5, 70_000.0), starts)
+    assert k.tolist() == [0, 0, 1, 0, -1]  # 170 ms is nearer to 150 ms, but has not happened yet
+    assert crossing.tolist() == [70_000, 70_000, 170_000, 70_000, -1]  # nothing crossed by 0 ms
 
 
 # ---------------------------------------------------------------- end to end
@@ -102,7 +103,7 @@ class FakeLidar:
     N_OBJECT_POINTS = 40
 
     def __init__(self, path, seen):
-        self.seen = seen  # world center fn(t_s), yaw, size
+        self.seen = seen if isinstance(seen, list) else [seen]  # each: world center fn(t_s), yaw, size
         self.starts = np.arange(13_000, 2_850_000, 100_000)
         self.ends = self.starts + 100_000
 
@@ -119,27 +120,34 @@ class FakeLidar:
         az = np.arange(-180, 180, 0.5)
         ring = np.c_[np.cos(np.radians(az)), np.sin(np.radians(az)), np.full(len(az), 5.0)] * [30, 30, 1]
         ring_t = (start + sweep_us(az)).astype(np.int64)
-        center_fn, yaw, size = self.seen
-        # When does the sweep cross the object? Its bearing from the sensor barely moves in 0.1 s.
-        az_obj = np.degrees(np.arctan2(*self._to_sensor(center_fn((start + 50_000) / 1e6), start + 50_000)[[1, 0]]))
-        t_hit = int(start + sweep_us(az_obj))
+        xyz, t = [ring], [ring_t]
         rng = np.random.default_rng(i)
-        local = (rng.random((self.N_OBJECT_POINTS, 3)) - 0.5) * size * [0.8, 0.8, 0.5] + [0, 0, 0.1]
-        world = Rotation.from_euler("z", yaw).apply(local) + center_fn(t_hit / 1e6)
-        xyz = np.r_[ring, self._to_sensor(world, t_hit)]
-        t = np.r_[ring_t, np.full(self.N_OBJECT_POINTS, t_hit)]
-        return Spin(i, start, start + 100_000, xyz, t)
+        for center_fn, yaw, size in self.seen:
+            # When does the sweep cross the object? Its bearing from the sensor barely moves in 0.1 s.
+            az_obj = np.degrees(np.arctan2(*self._to_sensor(center_fn((start + 50_000) / 1e6), start + 50_000)[[1, 0]]))
+            t_hit = int(start + sweep_us(az_obj))
+            local = (rng.random((self.N_OBJECT_POINTS, 3)) - 0.5) * size * [0.8, 0.8, 0.5] + [0, 0, 0.1]
+            world = Rotation.from_euler("z", yaw).apply(local) + center_fn(t_hit / 1e6)
+            xyz.append(self._to_sensor(world, t_hit))
+            t.append(np.full(self.N_OBJECT_POINTS, t_hit))
+        return Spin(i, start, start + 100_000, np.concatenate(xyz), np.concatenate(t))
 
 
-def test_observe_end_to_end(tmp_path, monkeypatch):
-    seen_yaw, hidden_yaw = 0.4, 0.0
-    seen_center, _, _ = mover(v=(6.0, 3.0, 0.0), c0=(15.0, -8.0, 0.8), yaw=seen_yaw)
-    hidden_center, _, _ = mover(v=(-3.0, 0.0, 0.0), c0=(-20.0, 12.0, 0.8), yaw=hidden_yaw)
-    size = np.array([4.0, 1.8, 1.5])
-    d = write_clip(tmp_path, {
-        "seen": ("automobile", clock(37_000, 2_937_000), seen_center, lambda t: seen_yaw, size),
-        "hidden": ("person", clock(61_000, 2_861_000), hidden_center, lambda t: hidden_yaw, (0.6, 0.6, 1.7)),
-    })  # fmt: skip
+class TruncatedLidar(FakeLidar):
+    """FakeLidar with every point recorded after `cut_us` removed: what a live car has at `cut_us`."""
+
+    def __init__(self, path, seen, cut_us):
+        super().__init__(path, seen)
+        self.cut_us = cut_us
+
+    def spin(self, i):
+        s = super().spin(i)
+        keep = s.t <= self.cut_us
+        return Spin(s.index, s.start, s.end, s.xyz[keep], s.t[keep])
+
+
+def lidar_clip(tmp_path, tracks):
+    d = write_clip(tmp_path, tracks)
     ext = pd.DataFrame(
         [list(EXT_ROT.as_quat()) + list(EXT_XYZ)], columns=["qx", "qy", "qz", "qw", "x", "y", "z"],
         index=pd.MultiIndex.from_tuples([(CLIP, "lidar_top_360fov")], names=["clip_id", "sensor_name"]),
@@ -147,14 +155,54 @@ def test_observe_end_to_end(tmp_path, monkeypatch):
     ext.to_parquet(d / "sensor_extrinsics.offline.parquet")
     (d / "lidar_top_360fov").mkdir()
     (d / "lidar_top_360fov" / "pointclouds.parquet").write_bytes(b"")  # presence only; the reader is faked
+    return d
+
+
+def test_readings_use_no_point_after_the_tick(tmp_path, monkeypatch):
+    """T021: removing every point recorded after 2.0 s changes no reading at ticks up to 2.0 s.
+    Objects all around the car are crossed at every phase of the spin, so some crossings fall just
+    after a tick (which the old nearest-crossing rule would have used)."""
+    size = np.array([4.0, 1.8, 1.5])
+    seen = [
+        (mover(v=(6.0, 3.0, 0.0), c0=(15 * np.cos(a), 15 * np.sin(a), 0.8), yaw=0.4)[0], 0.4, size)
+        for a in np.radians(np.arange(0, 360, 30))
+    ]
+    tracks = {f"o{n}": ("automobile", clock(37_000, 2_937_000), c, lambda t: 0.4, size) for n, (c, _, _) in enumerate(seen)}
+    cols = ["lidar_points", "observed", "lidar_spin", "lidar_dt_s"]
+    out = {}
+    for name, reader in {"all": lambda p: FakeLidar(p, seen), "cut": lambda p: TruncatedLidar(p, seen, 2_000_000)}.items():
+        monkeypatch.setattr(lidar, "SpinReader", reader)
+        out[name] = build_scene(lidar_clip(tmp_path / name, tracks), "offline").objects.set_index(["tick", "track_id"])
+    past = out["all"]["t_s"] <= 2.0 + 1e-9
+    pd.testing.assert_frame_equal(out["all"].loc[past, cols], out["cut"].loc[past, cols])
+    assert (out["cut"].loc[~past, "lidar_points"] == 0).any()  # and the cut does bite later
+
+
+def test_observe_end_to_end(tmp_path, monkeypatch):
+    seen_yaw, hidden_yaw = 0.4, 0.0
+    seen_center, _, _ = mover(v=(6.0, 3.0, 0.0), c0=(15.0, -8.0, 0.8), yaw=seen_yaw)
+    hidden_center, _, _ = mover(v=(-3.0, 0.0, 0.0), c0=(-20.0, 12.0, 0.8), yaw=hidden_yaw)
+    size = np.array([4.0, 1.8, 1.5])
+    d = lidar_clip(tmp_path, {
+        "seen": ("automobile", clock(37_000, 2_937_000), seen_center, lambda t: seen_yaw, size),
+        "hidden": ("person", clock(61_000, 2_861_000), hidden_center, lambda t: hidden_yaw, (0.6, 0.6, 1.7)),
+        "early": ("person", clock(0, 500_000), hidden_center, lambda t: hidden_yaw, (0.6, 0.6, 1.7)),
+    })  # fmt: skip
     monkeypatch.setattr(lidar, "SpinReader", lambda path: FakeLidar(path, (seen_center, seen_yaw, size)))
 
     scene = build_scene(d, "offline")
     o = scene.objects
-    seen, hidden = o[o["track_id"] == "seen"], o[o["track_id"] == "hidden"]
+    # Causal (T021): a row's reading is the latest crossing at or before the tick. At tick 0 no spin
+    # (the first starts at 13 ms) has crossed "early" yet, so it has no reading and is not observed.
+    read = o["lidar_spin"].notna()
+    unread = o[~read]
+    assert unread[["track_id", "tick"]].values.tolist() == [["early", 0]]
+    assert not unread["observed"].any() and unread["lidar_points"].isna().all() and unread["lidar_dt_s"].isna().all()
+    seen, hidden = o[o["track_id"] == "seen"], o[read & (o["track_id"] != "seen")]
     assert (seen["lidar_points"] == FakeLidar.N_OBJECT_POINTS).all()
     assert seen["observed"].all() and seen["in_scene"].all()
     assert (hidden["lidar_points"] == 0).all() and not hidden["in_scene"].any()
-    assert o["lidar_dt_s"].abs().max() <= 0.05 + 1e-6
+    assert o.loc[read, "lidar_dt_s"].between(-0.1, 0).all()
     assert scene.meta["rules"]["lidar_min_points"] == 5
     assert scene.report["lidar"]["observed_share"] == pytest.approx(len(seen) / len(o))
+    assert scene.report["lidar"]["rows_without_reading"] == 1

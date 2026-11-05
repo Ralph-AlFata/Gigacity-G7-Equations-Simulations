@@ -262,14 +262,16 @@ p_ego   = R(t_k)ᵀ · (p_world − x(t_k))     world → ego frame at tick t_k
 6. **Relative pose:** express every object in the ego frame at that tick (`rel_x`, `rel_y`, `rel_z`, `rel_yaw`,
    `distance`).
 7. **Lidar observability (T008, `lidar.py`):**
-   - **Choose the spin.** Out of the lidar's 100 ms spins, choose the one whose sweep crossed the
-     object nearest the tick (within ±50 ms).
+   - **Choose the spin.** Out of the lidar's 100 ms spins, choose the latest one whose sweep crossed
+     the object at or before the tick, 0–100 ms earlier. The reading is causal, like a live sensor
+     (T021). Before the first crossing an object has no reading and is not observed.
    - **Place the box.** Put the object's box where it was **at that crossing moment**, so a moving
      car is in the right place.
    - **Place the points.** Place every lidar point with the ego pose at its own timestamp. The points
      are raw, not motion-compensated (T005).
    - **Count.** Count the points inside the box, enlarged by 0.2 m on each side and ignoring the
-     bottom 0.2 m, which is the road.
+     bottom 0.2 m, which is the road. Points recorded after the tick don't count: they haven't
+     been measured yet.
    - **Decide.** 5 or more points means `observed`, and `in_scene = observed`.
 8. **Write** `meta.json`, `ego.parquet` and `objects.parquet`.
 
@@ -373,8 +375,8 @@ objects count.
 
 A label reads `<track_id> <class> <speed> m/s <N> pts`.
 - **Speed** is the object's derived speed at that tick.
-- **N** is T008's lidar count. It comes from the spin whose sweep crossed **that object** nearest
-  the tick, with the box placed at the crossing moment.
+- **N** is T008's lidar count. It comes from the latest spin whose sweep crossed **that object** at
+  or before the tick (T021), with the box placed at the crossing moment. `?` means no crossing yet.
 - **The drawn dots won't match N exactly.** The 3D view draws the spin whose *middle* is nearest the
   tick, thinned to 1 point in 10.
 
