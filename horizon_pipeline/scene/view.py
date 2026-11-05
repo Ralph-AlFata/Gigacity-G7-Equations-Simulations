@@ -3,7 +3,8 @@ scene's boxes drawn on the video.
 
 Reads only the scene files, plus the raw lidar, videos and calibration for display. Entities:
 
-    world/ego                     ego pose per tick (transform); box, heading arrow, rear-axle point
+    world/ego                     ego pose per tick (transform); box, heading arrow, rear-axle point;
+                                  the box is labeled with the ego speed and acceleration at each tick
     world/ego_path                the whole ego path (static)
     world/ego_<source>            with --compare: the other ego source's box and path
     world/obstacles/<track_id>    one box per existing object; colored by class group when in_scene,
@@ -12,6 +13,8 @@ Reads only the scene files, plus the raw lidar, videos and calibration for displ
     world/lidar                   the spin nearest each tick, placed point by point (T008)
     cameras/<camera>/image        video frames on the same timeline
     cameras/<camera>/boxes        the same boxes, projected into that camera
+    plots/<ego>/<quantity>        the ego's speed, a_long, a_lat and yaw_rate over the clip (T022);
+                                  `<ego>` is `ego`, plus `ego_<source>` with --compare
 
 Timeline: `clip_time`, in seconds from the scene's t0.
 
@@ -38,6 +41,13 @@ from horizon_pipeline.scene.frames import QUAT, XYZ, slerp_pairs
 from horizon_pipeline.scene.lidar import POINTCLOUDS, SpinReader, lidar_extrinsic, points_to_world
 
 TIMELINE = "clip_time"
+RECORDING_VERSION = 2  # bump when the recording's content changes, so cached recordings are rebuilt
+EGO_PLOTS = {  # quantity: (ego.parquet column, scale to the plotted unit, unit)
+    "speed": ("speed", 1.0, "m/s"),
+    "a_long": ("a_long", 1.0, "m/s²"),
+    "a_lat": ("a_lat", 1.0, "m/s²"),
+    "yaw_rate": ("yaw_rate", float(np.degrees(1.0)), "°/s"),
+}
 DEFAULT_RECORDINGS = Path("artifacts/scene")
 CLASS_COLORS = {"vehicle": (60, 140, 255), "vru": (255, 160, 20), "static": (40, 200, 120), "unknown": (220, 60, 220)}
 UNSEEN_COLOR = (150, 150, 150, 90)  # exists, but the lidar does not see it
@@ -88,6 +98,13 @@ def object_label(row) -> str:
     return f"{row.track_id} {row.label_class} {speed} m/s {points} pts"
 
 
+def ego_label(row, name: str = "ego") -> str:
+    """E.g. "ego 7.1 m/s, a_long +0.7 m/s²"; "?" where the derived motion does not exist yet (T009)."""
+    speed = "?" if pd.isna(row.speed) else f"{row.speed:.1f}"
+    a_long = "?" if pd.isna(row.a_long) else f"{row.a_long:+.1f}"
+    return f"{name} {speed} m/s, a_long {a_long} m/s²"
+
+
 # ---------------------------------------------------------------- 3D
 
 
@@ -95,13 +112,30 @@ def log_ego(rec: rr.RecordingStream, meta: dict, ego: pd.DataFrame, path: str = 
     fp = meta["ego"]["footprint"]
     lo = np.array([fp["x_min"], fp["y_min"], fp["z_min"]])
     hi = np.array([fp["x_max"], fp["y_max"], fp["z_max"]])
-    rec.log(f"{path}/box", rr.Boxes3D(mins=[lo], sizes=[hi - lo], colors=[color]), static=True)
+    rec.log(f"{path}/box", rr.Boxes3D(mins=[lo], sizes=[hi - lo], colors=[color], show_labels=True), static=True)
     rec.log(f"{path}/heading", rr.Arrows3D(origins=[[0, 0, 0.1]], vectors=[[hi[0] + 1.0, 0, 0]], colors=[color]), static=True)
     rec.log(f"{path}/rear_axle", rr.Points3D([[0, 0, 0]], radii=[0.08], colors=[color]), static=True)
     rec.log(f"{path}_path", rr.LineStrips3D([ego[XYZ].to_numpy()], colors=[color]), static=True)
+    name = path.removeprefix("world/")
     for row in ego.itertuples():
         clip_time(rec, row.t_s)
         rec.log(path, rr.Transform3D(translation=[row.x, row.y, row.z], quaternion=[row.qx, row.qy, row.qz, row.qw]))
+        rec.log(f"{path}/box", rr.Boxes3D.from_fields(labels=[ego_label(row, name.replace("_", " "))]))
+    log_ego_plots(rec, ego, name, color)
+
+
+def log_ego_plots(rec: rr.RecordingStream, ego: pd.DataFrame, name: str = "ego", color=EGO_COLOR) -> None:
+    """The ego's motion columns as time series under plots/<name>/; ticks where a value does not
+    exist yet (NaN, T009) are left out."""
+    for quantity, (column, scale, unit) in EGO_PLOTS.items():
+        path = f"plots/{name}/{quantity}"
+        rec.log(path, rr.SeriesLines(names=f"{name} {quantity} ({unit})", colors=[color]), static=True)
+        ok = ego[column].notna().to_numpy()
+        rec.send_columns(
+            path,
+            indexes=[rr.TimeColumn(TIMELINE, duration=ego["t_s"].to_numpy(float)[ok])],
+            columns=rr.Scalars.columns(scalars=ego[column].to_numpy(float)[ok] * scale),
+        )
 
 
 def log_objects(rec: rr.RecordingStream, objects: pd.DataFrame, ticks: pd.Series, opts: "ViewOptions") -> None:
@@ -222,10 +256,18 @@ def log_camera(rec: rr.RecordingStream, cam: Camera, t0_us: int, ego: pd.DataFra
 # ---------------------------------------------------------------- layout and entry point
 
 
-def blueprint(cameras: list[str]) -> rrb.Blueprint:
-    world = rrb.Spatial3DView(
+def blueprint(cameras: list[str], egos: tuple[str, ...] = ("ego",)) -> rrb.Blueprint:
+    """The 3D scene with the ego's motion plots under it (one plot per group of quantities, every
+    ego source in `egos` overlaid), next to the cameras."""
+    scene = rrb.Spatial3DView(
         origin="world", name="scene", eye_controls=rrb.EyeControls3D(tracking_entity="world/ego"),
     )  # fmt: skip
+    groups = {"ego speed (m/s)": ["speed"], "ego acceleration (m/s²)": ["a_long", "a_lat"], "ego yaw rate (°/s)": ["yaw_rate"]}
+    plots = [
+        rrb.TimeSeriesView(origin="plots", name=title, contents=[f"+ /plots/{e}/{q}" for e in egos for q in quantities])
+        for title, quantities in groups.items()
+    ]
+    world = rrb.Vertical(scene, rrb.Horizontal(*plots), row_shares=[3, 1])
     if not cameras:
         return rrb.Blueprint(world, collapse_panels=True)
     views = [rrb.Spatial2DView(origin=f"cameras/{c}", name=c) for c in cameras]
@@ -279,7 +321,7 @@ def log_scene(
 
 def recording_path(root: Path, clip_id: str, ego_source: str, opts: ViewOptions) -> Path:
     """One file per clip, ego source and set of options: <root>/<clip_id>/<ego_source>-<hash>.rrd."""
-    key = hashlib.sha256(json.dumps(asdict(opts), sort_keys=True).encode()).hexdigest()[:8]
+    key = hashlib.sha256(json.dumps({**asdict(opts), "version": RECORDING_VERSION}, sort_keys=True).encode()).hexdigest()[:8]
     return Path(root) / clip_id / f"{ego_source}-{key}.rrd"
 
 
@@ -304,7 +346,8 @@ def write_recording(
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_name(path.name + ".partial")
     rec = rr.RecordingStream("horizon-scene", recording_id=f"{Path(clip_dir).name}-{Path(scene_dir).name}")
-    rec.save(partial, default_blueprint=blueprint(opts.cameras))
+    egos = ("ego",) + ((f"ego_{other_source(Path(scene_dir).name)}",) if opts.compare else ())
+    rec.save(partial, default_blueprint=blueprint(opts.cameras, egos))
     meta = log_scene(rec, scene_dir, clip_dir, opts, progress)
     rec.flush()
     rec.disconnect()

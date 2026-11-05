@@ -132,6 +132,7 @@ The equations read only rows with `in_scene = true`.
 | T010 | Task | Stream a scene to Rerun | done |
 | T020 | Bug | Duplicate check is too strict for distant objects | done |
 | T021 | Task | Causal lidar observability | review |
+| T022 | Task | Ego speed and acceleration in the viewer | review |
 
 ## Notes
 Measured on our two clips (old raw files):
