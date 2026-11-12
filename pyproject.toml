@@ -16,6 +16,7 @@ dependencies = [
     "physical_ai_av>=0.2.3",
     "dracopy>=2.2.0",
     "rerun-sdk==0.40.0",
+    "pyyaml>=6",
 ]
 
 [project.scripts]

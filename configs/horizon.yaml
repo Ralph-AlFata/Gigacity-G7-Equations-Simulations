@@ -1,0 +1,24 @@
+# Clearance-horizon parameters (T013). SI units. Equations: tickets/E03-horizon/README.md and
+# Deadline_Aware_Multi_Vehicle_Serving.pdf. The values are placeholders, not validated (T018, T019).
+
+ego:
+  r_veh_m: auto          # disk around the rear axle covering the footprint (auto), or a number
+  rho0_m: 0.2            # initial tracking allowance, ρ0 ≥ ‖e_p(t)‖
+
+tracking:
+  e_v_bar_mps: 0.3       # bound on the speed error ē_v
+  e_theta_bar_rad: 0.05  # bound on the heading error ē_θ (≤ π)
+  # q̄ = ē_v + 2·v̄_ref·sin(ē_θ/2), v̄_ref = max plan speed over [0, T_cap]
+
+objects:
+  eps_p_m: 0.3           # bound on the position-estimate error ε_p
+  eps_v_mps: 0.5         # bound on the velocity-estimate error ε_v
+  a_bar_mps2: 2.0        # bound on the object's acceleration ā
+  # r_k = half of the box's planar diagonal
+
+horizon:
+  t_valid_s: 6.4         # T_cap = min(plan's remaining duration, t_valid); 6.4 s = Alpamayo's plan length
+
+solver:
+  grid_s: 0.01           # spacing of the τ grid searched for the first crossing
+  time_tolerance_s: 0.001  # bisection stops when the crossing is bracketed this tightly
