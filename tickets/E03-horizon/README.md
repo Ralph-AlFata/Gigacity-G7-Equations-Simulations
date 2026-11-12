@@ -66,7 +66,7 @@ For a plan received at tick t, for τ ∈ [0, T_cap]:
 - H = inf{τ ∈ [0, T_cap] : minₖ mₖ(τ) ≤ 0}. If there is no such τ, then H = T_cap and the row is
   marked `capped`.
 
-**T_cap** = the plan's remaining duration, at most `max_plan_s` in the config (default 6.4 s,
+**T_cap** = the plan's remaining duration, at most `t_valid_s` in the config (the PDF's T_valid; default 6.4 s,
 Alpamayo's plan length). The recorded stand-in runs to the end of the clip, so the cap makes its H
 comparable with Alpamayo's.
 
@@ -102,9 +102,9 @@ comparable with Alpamayo's.
 ## Tickets
 | ID | Type | Title | Status |
 |---|---|---|---|
-| T011 | Task | Reference format + recorded-path reference | review |
+| T011 | Task | Reference format + recorded-path reference | done |
 | T012 | Task | Alpamayo trajectory import | todo |
-| T013 | Task | Horizon config + baseline H solver | todo |
+| T013 | Task | Horizon config + baseline H solver | review |
 | T014 | Task | Horizon runner: one H per plan | todo |
 | T015 | Task | Safety check: was H actually safe? | todo |
 | T016 | Experiment | H: how long, and was it safe? | todo |

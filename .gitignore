@@ -52,3 +52,6 @@ hf_cache/
 *.zip
 *.npz
 *.parquet
+
+# --- Notebooks shared for reading, not part of the pipeline ---
+Untitled*.ipynb

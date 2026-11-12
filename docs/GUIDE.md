@@ -264,6 +264,38 @@ ref, meta = read_reference("data/reference/b789fab8-41f1-4cf3-b7f8-a8e94939f67d/
 plan = ref[ref["tick"] == 50]          # the plan made at 5.0 s: where the car went from there
 ```
 
+### The H solver (T013)
+
+`configs/horizon.yaml` holds every parameter of the equations, in SI units: ρ0, ē_v, ē_θ, ε_p, ε_v, ā,
+`t_valid_s` and the solver grid. Edit it there. `load_config` refuses unknown or missing keys,
+negative values and ē_θ > π.
+
+`solve(plan, objects, r_veh, cfg)` (in `horizon_pipeline/horizon/solver.py`) computes H for one plan,
+with the PDF's baseline equations, from numbers only:
+
+```python
+import json, pandas as pd
+from horizon_pipeline.horizon.config import load_config
+from horizon_pipeline.horizon.solver import Objects, Plan, ego_radius, solve
+from horizon_pipeline.reference.format import read_reference
+
+clip = "b789fab8-41f1-4cf3-b7f8-a8e94939f67d"
+scene = f"data/scene/{clip}/offline"
+cfg = load_config()
+r_veh = ego_radius(json.load(open(f"{scene}/meta.json"))["ego"]["footprint"])   # 3.790 m
+ref, _ = read_reference(f"data/reference/{clip}/offline/recorded")
+objects = pd.read_parquet(f"{scene}/objects.parquet")
+seen = objects[(objects["tick"] == 50) & objects["in_scene"] & objects["vx"].notna()]
+h = solve(Plan.from_rows(ref[ref["tick"] == 50]), Objects.from_rows(seen), r_veh, cfg)
+print(h.H_s, h.limiting_track_id, h.capped)
+```
+
+- The result also gives T_cap, q̄, v̄_ref, r_veh and the smallest margin at τ = 0.
+- An object with a missing velocity (a track's first tick) is **refused**, not ignored. The caller
+  decides what to do with it.
+- `tests/hand_example.md` works one case out by hand (H = 2.04255 s, limited by a pedestrian). The
+  tests check the solver against it.
+
 ---
 
 ## 5. What a scene is and how it is built
@@ -512,6 +544,9 @@ horizon_pipeline/
     camera.py         f-theta projection, camera poses, video decoding
     view.py           the Rerun view (3D scene, camera frames, boxes on the video)
     cli.py            horizon-scene (build, view)
+  horizon/
+    config.py         configs/horizon.yaml -> a validated HorizonConfig
+    solver.py         the baseline H equations for one plan
   reference/
     format.py         the reference format: columns, validation, read/write
     recorded.py       the recorded-path reference (the ego's own future)
@@ -521,6 +556,7 @@ scripts/              one-off spike scripts that print the evidence quoted in ti
   spike_t005_lidar.py         lidar format, frame, timing, motion compensation
   spike_t006_rig_origin.py    is the rig origin the rear axle?
 tests/                pytest; synthetic tests always run, real-data tests need data/raw/
+configs/              horizon.yaml: the parameters of the H equations
 tickets/              the project tracker (epics, tickets, decisions, evidence)
 old/                  the previous pipeline, reference only
 data/                 not in git: raw/, scene/, reference/, clip_lists/
@@ -549,6 +585,8 @@ uv run pytest -k lidar                 # by name
 | `test_view.py` | f-theta projection equals NVIDIA's SDK; boxes land where they should in a camera; interpolation between ticks; a synthetic clip with a video recorded to `.rrd` and read back |
 | `test_scene_real.py` | the real clips: grid and columns, parked cars stay still, no impossible jumps, lidar columns, near objects observed |
 | `test_reference.py` | the reference format (round trip, each kind of bad file refused) and the recorded path on a synthetic ego |
+| `test_horizon.py` | the config's validation, the solver against analytic crossings, caps, refusal of NaN inputs, and the hand example in `tests/hand_example.md` |
+| `test_horizon_real.py` | every recorded plan of the real clips solves, with consistent outputs |
 | `test_reference_real.py` | the real clips: every step of every recorded plan lies exactly on the ego's track |
 
 Real-data tests are **skipped** (not failed) when `data/raw/` is missing.

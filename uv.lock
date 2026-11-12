@@ -25,6 +25,7 @@ dependencies = [
     { name = "pandas" },
     { name = "physical-ai-av" },
     { name = "pyarrow" },
+    { name = "pyyaml" },
     { name = "rerun-sdk" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -43,6 +44,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.1" },
     { name = "physical-ai-av", specifier = ">=0.2.3" },
     { name = "pyarrow", specifier = ">=15" },
+    { name = "pyyaml", specifier = ">=6" },
     { name = "rerun-sdk", specifier = "==0.40.0" },
     { name = "scipy", specifier = ">=1.12" },
 ]
