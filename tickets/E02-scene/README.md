@@ -131,8 +131,8 @@ The equations read only rows with `in_scene = true`.
 | T009 | Spike | Derived ego motion vs online egomotion | done |
 | T010 | Task | Stream a scene to Rerun | done |
 | T020 | Bug | Duplicate check is too strict for distant objects | done |
-| T021 | Task | Causal lidar observability | review |
-| T022 | Task | Ego speed and acceleration in the viewer | review |
+| T021 | Task | Causal lidar observability | done |
+| T022 | Task | Ego speed and acceleration in the viewer | done |
 
 ## Notes
 Measured on our two clips (old raw files):
