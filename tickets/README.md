@@ -69,10 +69,10 @@ checklist item inside the ticket, not a nested folder.
 | T011 | Task | Reference format + recorded-path reference | E03 | review | T007 |
 | T012 | Task | Alpamayo trajectory import | E03 | todo | T011 |
 | T013 | Task | Horizon config + baseline H solver | E03 | todo | T011 |
-| T014 | Task | Live replay runner | E03 | todo | T008, T012, T013 |
-| T015 | Task | Truth check: was H actually safe? | E03 | todo | T014 |
-| T016 | Experiment | Distribution of H on the two clips | E03 | todo | T014, T015 |
-| T017 | Task | Rerun view of the horizon | E03 | todo | T010, T014 |
+| T014 | Task | Horizon runner: one H per plan | E03 | todo | T008, T012, T013 |
+| T015 | Task | Safety check: was H actually safe? | E03 | todo | T014 |
+| T016 | Experiment | H: how long, and was it safe? | E03 | todo | T014, T015 |
+| T017 | Task | Rerun view of the horizon | E03 | todo | T010, T014, T015 |
 | T018 | Decision | What the truth check validates | E03 | done | none |
 | T019 | Experiment | Do the object bounds hold on our scenes? | E03 | todo | T008, T009, T013 |
 | T020 | Bug | Duplicate check is too strict for distant objects | E02 | done | T007 |

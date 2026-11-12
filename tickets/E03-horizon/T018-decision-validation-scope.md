@@ -19,6 +19,10 @@ we know where the objects really went. It cannot test the ego half:
 
 Testing the ego half needs a controller following the plan, in a simulator or on a real car.
 
+**Update 2026-11-12 (T023):** the safety check is now real contact, with the ego's box following
+the plan exactly and not enlarged by ρ(τ). This makes the scope below explicit: ρ0 and q̄ shorten H,
+but nothing on the dataset tests whether they are right. The decision stands unchanged.
+
 ## Options
 ### A. Claim H is validated
 - Pros: simple headline.
