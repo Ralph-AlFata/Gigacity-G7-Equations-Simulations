@@ -6,8 +6,12 @@
 **Depends on:** T014
 
 ## Goal
-For every H computed live, look at what really happened afterwards and say whether H was valid,
+For every H computed live, look at what really happened afterwards and say whether H was safe,
 and how much room was left.
+
+**Unsafe means contact (T023):** a car following the plan exactly would have touched a real object
+before H. That is `H_true_box` below, the main result. The disk truth is a diagnostic: it tells
+whether the predictions held.
 
 ## Inputs → Outputs
 - Inputs: a run from T014; the same scene and reference.
@@ -28,7 +32,8 @@ and how much room was left.
   - `H_true_disk`: the true margin above, with the same disk shapes as the live H. It answers
     "did the predictions hold?".
   - `H_true_box`: the same, but with real shapes. The ego footprint is the box around the rear
-    axle, enlarged by ρ(τ); each object is its labeled 3D box, at its true pose. The planar distance
+    axle at the plan's pose, not enlarged (the car follows the plan exactly, T023); each object is
+    its labeled 3D box, at its true pose. The planar distance
     between the two oriented boxes must be > 0. This answers "would there have been real contact?".
     The difference H_true_box − H_true_disk shows how much room the disks waste.
   - Either one is the first τ with margin ≤ 0, or T_cap.

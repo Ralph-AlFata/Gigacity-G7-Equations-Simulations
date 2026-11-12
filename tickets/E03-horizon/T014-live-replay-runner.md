@@ -6,8 +6,9 @@
 **Depends on:** T008, T012, T013
 
 ## Goal
-Play a scene tick by tick. At every tick that has a reference, give the solver what is known at that
-moment, and store H.
+Play a scene tick by tick. At every tick where a plan is received (a tick that has a reference),
+give the solver what is known at that moment, and store H. As decided in T023, H is computed once
+per plan, on receipt, and never updated while the plan is followed.
 
 ## Inputs → Outputs
 - Inputs:

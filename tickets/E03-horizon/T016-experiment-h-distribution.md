@@ -10,7 +10,8 @@ What does the distribution of H look like with the baseline equations and the cu
 each reference source?
 
 ## Setup
-- **Clips:** b789fab8, b4d979af.
+- **Clips:** b789fab8, b4d979af for the recorded stand-in; the clips of Ralph's snapshot dataset
+  for Alpamayo (T023).
 - **Ego source:** `egomotion.offline` (T004).
 - **References:** recorded path and Alpamayo, reported separately, never pooled.
 - **Config:** `configs/horizon.yaml` as committed; its SHA-256 is recorded.
@@ -25,6 +26,13 @@ Per (clip, ego source, reference) and pooled over the two clips for one referenc
 - **Truth check (object-side only, T018):** for both the disk and the box truths: share valid,
   share invalid (by cause: `new_object` / `unobserved` / `prediction`), share unknown; distribution
   of slack.
+
+**Added by T023:**
+- **A (length):** the share of plans with H below the inference time (~1.2 s on an A40). The low
+  tail (p5, p10) is the headline next to the median, because short H is what loads the scheduler.
+- **B (safety, box truth):** the unsafe rate (contact before H) for objects known at t, for objects
+  not known at t, and in total, each with a 95% upper bound (Clopper-Pearson; about 3/n with 0
+  failures in n plans). Plans close in time are not independent, so the bound is also given per clip.
 
 The headline mean is reported both with and without capped rows. A capped H means "no crossing
 found before T_cap", not a measured value, so it pulls the mean around.

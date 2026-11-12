@@ -10,7 +10,9 @@ Convert the trajectories from Ralph's Alpamayo runs into the reference format of
 Alpamayo is not part of this ticket.
 
 ## Inputs → Outputs
-- Inputs: Alpamayo output files for a clip, one per tick it was run at. Ralph runs these properly:
+- Inputs: Alpamayo output files for a clip, one per snapshot tick it was run at. They come from a
+  separate process run by Ralph that builds the snapshot dataset (e.g. every 0.3 s, T023). Ralph runs
+  these properly:
   - 4 cameras;
   - online egomotion;
   - 1.6 s of history;

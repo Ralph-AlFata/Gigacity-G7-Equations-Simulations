@@ -78,3 +78,4 @@ checklist item inside the ticket, not a nested folder.
 | T020 | Bug | Duplicate check is too strict for distant objects | E02 | done | T007 |
 | T021 | Task | Causal lidar observability | E02 | done | T008, T009 |
 | T022 | Task | Ego speed and acceleration in the viewer | E02 | done | T010 |
+| T023 | Decision | What H means: once per plan on receipt, checked against the true future | E03 | done | T011 |
