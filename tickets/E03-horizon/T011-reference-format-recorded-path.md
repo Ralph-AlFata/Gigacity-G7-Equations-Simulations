@@ -9,6 +9,10 @@
 Define one file format for reference trajectories (any source), and produce the recorded-path
 reference from the scene: at each tick, the path the car actually drove afterwards.
 
+The real plans are Alpamayo's (T012, T023). The recorded path is a stand-in, so that the solver and
+the safety check can be built before they exist. Its plans run to the end of the clip; the solver
+cuts them to `max_plan_s` (6.4 s, T013) so its H is comparable with Alpamayo's.
+
 ## Inputs → Outputs
 - Inputs: `data/scene/<clip_id>/<ego_source>/ego.parquet`.
 - Outputs: `data/reference/<clip_id>/<ego_source>/recorded/reference.parquet` and `meta.json`.

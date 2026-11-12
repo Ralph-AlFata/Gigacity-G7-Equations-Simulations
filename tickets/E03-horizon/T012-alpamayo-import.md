@@ -6,11 +6,14 @@
 **Depends on:** T011
 
 ## Goal
-Convert the trajectories from Ralph's Alpamayo runs into the reference format of T011. Running
-Alpamayo is not part of this ticket.
+Convert the Alpamayo plans of Ralph's snapshot dataset into the reference format of T011. These are
+the real plans that H is computed for (T023). Generating the dataset and running Alpamayo are not
+part of this ticket.
 
 ## Inputs → Outputs
-- Inputs: Alpamayo output files for a clip, one per tick it was run at. Ralph runs these properly:
+- Inputs: Alpamayo output files for a clip, one per snapshot tick it was run at. They come from a
+  separate process run by Ralph that builds the snapshot dataset (e.g. every 0.3 s, T023). Ralph runs
+  these properly:
   - 4 cameras;
   - online egomotion;
   - 1.6 s of history;
@@ -22,6 +25,7 @@ Alpamayo is not part of this ticket.
   - clip ID and the input timestamp t (µs, same clock as the scene);
   - the trajectory for every sample: positions (x, y, z) and rotations per step, in the ego frame at
     time t, at 0.1 s steps (64 steps);
+  - the snapshot interval used (e.g. 0.3 s);
   - model version and run settings.
 - **Match to a tick.** Each output is matched to the scene tick with the same timestamp, within
   1 ms. An output that matches no tick is an error, never rounded silently.
@@ -32,7 +36,9 @@ Alpamayo is not part of this ticket.
 - **Speed.** Per step, from the difference between consecutive positions.
 - **Step 0.** Its offset from the ego position is stored in `meta.json` as a check value. It should
   be ~0, since the trajectory starts at the ego.
+- **Every sample is kept,** as its own `sample` index. Each gets its own H (T023).
 - Ticks Alpamayo was not run at simply have no Alpamayo reference.
+- `meta.json` also records the snapshot interval and the number of samples per snapshot.
 
 ## Assumptions
 - Alpamayo outputs are in the ego frame at the input time, with steps starting at +0.1 s or at 0.
@@ -40,13 +46,14 @@ Alpamayo is not part of this ticket.
 
 ## Subtasks
 - [ ] Write the input contract into the repo README (for the run script)
-- [ ] Importer + CLI `reference alpamayo --clip … --from <dir>`
+- [ ] Importer + CLI `horizon-reference alpamayo --clip … --from <dir>`
 - [ ] Import the new runs
 
 ## Acceptance criteria
 - [ ] Test: a synthetic trajectory in the ego frame, imported at a known ego pose, lands at the
       expected world coordinates.
 - [ ] Test: an output with a timestamp not on the grid is rejected with a clear message.
+- [ ] Test: a snapshot with 3 samples gives 3 plans at that tick, in sample order.
 - [ ] Check: step-0 offset from the ego is below 0.1 m on all imported ticks.
 - [ ] Rerun check (after T017): Alpamayo trajectories start at the ego and follow the lane.
 
