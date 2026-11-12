@@ -1,7 +1,7 @@
 # E03 — Horizon replay
 
 **Type:** Epic
-**Status:** todo
+**Status:** in-progress
 **Depends on:** E02
 
 ## Goal
@@ -82,7 +82,7 @@ ends for the recorded path), optionally lowered by `t_valid_s` in the config (of
 ## Tickets
 | ID | Type | Title | Status |
 |---|---|---|---|
-| T011 | Task | Reference format + recorded-path reference | todo |
+| T011 | Task | Reference format + recorded-path reference | review |
 | T012 | Task | Alpamayo trajectory import | todo |
 | T013 | Task | Horizon config + baseline H solver | todo |
 | T014 | Task | Live replay runner | todo |

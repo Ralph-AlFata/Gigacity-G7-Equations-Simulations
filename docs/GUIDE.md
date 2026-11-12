@@ -36,6 +36,12 @@ ego car is and which objects are around it and actually visible. So far the pipe
           ▼
  horizon-scene view → Rerun: the scene in 3D next to the real camera videos, boxes drawn on them
           │
+          │  horizon-reference recorded
+          ▼
+ data/reference/<clip_id>/<ego_source>/<source>/
+     meta.json          source, frame, step size, inputs
+     reference.parquet  one row per (plan tick, sample, step): the planned rear-axle path
+          │
           ▼
  (next) H solver / replay (E03)
 ```
@@ -78,7 +84,10 @@ uv run horizon-fetch --clips-file clips_selected_train.txt \
     --features camera_front_wide_120fov:video camera_cross_left_120fov:video camera_cross_right_120fov:video
 uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d
 
-# 5. run the tests (~1 min; the real-data tests run only if data/raw/ is filled)
+# 5. the recorded-path references: at each tick, where the car actually drove afterwards (~1 s)
+uv run horizon-reference recorded --clips-file clips_selected_train.txt --ego-source both
+
+# 6. run the tests (~1 min; the real-data tests run only if data/raw/ is filled)
 uv run pytest
 ```
 
@@ -217,6 +226,43 @@ What you see, all on one timeline (`clip_time`, play, pause and scrub):
 
 - **Cost:** a recording is ~150–250 MB and takes 25–55 s to build, once. Most of that is lidar (~12 s for
   b789fab8); each camera takes ~3.5 s.
+
+### `horizon-reference recorded`: the path the car actually drove (T011)
+
+```sh
+uv run horizon-reference recorded --clips-file clips_selected_train.txt --ego-source both
+```
+
+- **What it writes:** `data/reference/<clip>/<ego_source>/recorded/`, a `reference.parquet` and a
+  `meta.json`. It needs the scene to be built first.
+- **What a reference is:** the plan made at each tick t, as a list of steps 0.1 s apart. Every source
+  (this one, Alpamayo later) uses the same format:
+
+  | Column | Unit | Meaning |
+  |---|---|---|
+  | `tick` | int | scene tick the plan was made at (t) |
+  | `sample` | int | sample index (0 when a source gives one trajectory) |
+  | `step` | int | 0, 1, 2, ... |
+  | `tau_s` | s | time after t, `step × 0.1` |
+  | `x, y, z` | m | rear-axle position, in the scene's world frame |
+  | `yaw` | rad | heading, in the scene's world frame |
+  | `speed` | m/s | speed at this step |
+
+- **The recorded source:** step k of the plan made at tick t is the scene's ego at tick t + k. So
+  the plan at tick 0 runs to the end of the clip (201 steps, 20 s), and the plan at the last tick
+  is a single step. A 201-tick clip gives 201·202/2 = 20 301 rows.
+  - This is hindsight, so it counts as environment and may use the future.
+  - Speed is the scene's speed at t + k. The scene has none at tick 0, so that one value is
+    tick 1's speed (listed in `meta.json` under `speed_filled_ticks`).
+- **Checks on reading:** `read_reference` (in `horizon_pipeline/reference/format.py`) refuses a file
+  with missing columns, NaNs, non-integer ticks or steps, steps that are not 0, 1, 2, ... in order,
+  a plan that appears twice, or `tau_s` ≠ `step × step_s`.
+
+```python
+from horizon_pipeline.reference.format import read_reference
+ref, meta = read_reference("data/reference/b789fab8-41f1-4cf3-b7f8-a8e94939f67d/offline/recorded")
+plan = ref[ref["tick"] == 50]          # the plan made at 5.0 s: where the car went from there
+```
 
 ---
 
@@ -466,6 +512,10 @@ horizon_pipeline/
     camera.py         f-theta projection, camera poses, video decoding
     view.py           the Rerun view (3D scene, camera frames, boxes on the video)
     cli.py            horizon-scene (build, view)
+  reference/
+    format.py         the reference format: columns, validation, read/write
+    recorded.py       the recorded-path reference (the ego's own future)
+    cli.py            horizon-reference
 scripts/              one-off spike scripts that print the evidence quoted in tickets
   spike_t004_egomotion.py     online vs offline egomotion
   spike_t005_lidar.py         lidar format, frame, timing, motion compensation
@@ -473,7 +523,7 @@ scripts/              one-off spike scripts that print the evidence quoted in ti
 tests/                pytest; synthetic tests always run, real-data tests need data/raw/
 tickets/              the project tracker (epics, tickets, decisions, evidence)
 old/                  the previous pipeline, reference only
-data/                 not in git: raw/, scene/, clip_lists/
+data/                 not in git: raw/, scene/, reference/, clip_lists/
 artifacts/            not in git: saved Rerun recordings
 ```
 
@@ -498,6 +548,8 @@ uv run pytest -k lidar                 # by name
 | `test_lidar.py` | box counting, per-point placement, sweep timing, and an end-to-end fake lidar with a moving car |
 | `test_view.py` | f-theta projection equals NVIDIA's SDK; boxes land where they should in a camera; interpolation between ticks; a synthetic clip with a video recorded to `.rrd` and read back |
 | `test_scene_real.py` | the real clips: grid and columns, parked cars stay still, no impossible jumps, lidar columns, near objects observed |
+| `test_reference.py` | the reference format (round trip, each kind of bad file refused) and the recorded path on a synthetic ego |
+| `test_reference_real.py` | the real clips: every step of every recorded plan lies exactly on the ego's track |
 
 Real-data tests are **skipped** (not failed) when `data/raw/` is missing.
 
@@ -527,6 +579,6 @@ Real-data tests are **skipped** (not failed) when `data/raw/` is missing.
 - **`lidar_min_points = 5` is a parameter.** It is stored in `meta.json`. Tune it by looking at the
   viewer.
 - **The camera overlay ignores the rolling shutter.** The sensor reads top to bottom over 30 ms.
-- **Derived ego motion is not yet checked** against the vehicle's own measurements (T009).
-- **Edge-tick timing:** in the first and last 0.1 s of a clip, the lidar spin can be up to ~97 ms from
-  the tick, because there is no spin on one side.
+- **Online egomotion can be much longer than the clip.** For ca823746 the online `egomotion` file
+  spans −0.2 s to 140.2 s (offline: 0 to 20 s), so its online scene, and its recorded reference,
+  have 1 402 ticks. The scene builder does not cut the grid to the clip's 20 s yet.
