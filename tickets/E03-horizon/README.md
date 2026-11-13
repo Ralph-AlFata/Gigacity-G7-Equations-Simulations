@@ -103,8 +103,8 @@ comparable with Alpamayo's.
 | ID | Type | Title | Status |
 |---|---|---|---|
 | T011 | Task | Reference format + recorded-path reference | done |
-| T012 | Task | Alpamayo trajectory import | todo |
-| T013 | Task | Horizon config + baseline H solver | review |
+| T012 | Task | Alpamayo trajectory import | done |
+| T013 | Task | Horizon config + baseline H solver | done |
 | T014 | Task | Horizon runner: one H per plan | todo |
 | T015 | Task | Safety check: was H actually safe? | todo |
 | T016 | Experiment | H: how long, and was it safe? | todo |
