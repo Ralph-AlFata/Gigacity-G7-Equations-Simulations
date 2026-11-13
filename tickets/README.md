@@ -79,4 +79,4 @@ checklist item inside the ticket, not a nested folder.
 | T021 | Task | Causal lidar observability | E02 | done | T008, T009 |
 | T022 | Task | Ego speed and acceleration in the viewer | E02 | done | T010 |
 | T023 | Decision | What H means: once per plan on receipt, checked against the true future | E03 | done | T011 |
-| T024 | Spike | A revised derivation of H that fits our data | E03 | review | T009, T013, T014, T023 |
+| T024 | Spike | A revised derivation of H | E03 | review | T009, T013, T014, T023 |

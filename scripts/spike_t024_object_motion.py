@@ -1,6 +1,8 @@
 """T024 evidence: how objects really move against the constant-velocity prediction, in their own frame.
 
-Prints the numbers quoted in docs/derivation/horizon_derivation.tex (T024):
+Prints the numbers quoted in docs/derivation/horizon_derivation.tex (T024). They are used to
+DIAGNOSE what is structurally wrong with the baseline and as sanity checks, never to fit a parameter:
+five clips are far too few for that (Section 1 of the document).
 1. heading of moving vehicles against their velocity direction (do they slide sideways?);
 2. prediction residuals o(t+τ) − ô(τ), split along the box heading (longitudinal) and across it
    (lateral), for two nominal predictions: the full velocity ŵτ, and the velocity projected on the
@@ -22,8 +24,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
-from scipy.optimize import nnls
 
 from horizon_pipeline.scene.checks import parked_spread
 
@@ -204,27 +204,6 @@ def main():
             g = rp[(rp["tau"] == tau) & (rp["label"] == name)]
             if len(g):
                 print(f"    τ={tau:3.1f}  n={len(g):6d} tracks={g.groupby(['clip','track_id']).ngroups:4d}  {qtab(g['norm_full'])}")
-
-    # 2b. quantile curves fitted as c0 + c1 τ + c2 τ² (c ≥ 0): the ε_p, ε_v, ā/2 that would match
-    print("\n[2b] quantile curves fitted as c0 + c1·τ + c2·τ² (nonnegative): c0 [m], c1 [m/s], 2·c2 [m/s²]")
-    taus = np.array(TAUS)
-    A = np.c_[np.ones_like(taus), taus, taus**2]
-    series = {
-        "vehicle |r|": (rv, lambda g: g["norm_full"]),
-        "vehicle lateral (heading-proj.)": (rv, lambda g: g["lat_head"]),
-        "vehicle lon ahead": (rv, lambda g: g["lon_head"].clip(lower=0)),
-        "vehicle lon behind": (rv, lambda g: (-g["lon_head"]).clip(lower=0)),
-        "person |r|": (rp[rp["label"] == "person"], lambda g: g["norm_full"]),
-    }
-    stopped, moving = rv[rv["speed"] < 0.5], rv[rv["speed"] >= 0.5]
-    for grp, df in [("all", rv), ("stopped", stopped), ("moving", moving)]:
-        for col in ["over_front", "over_back", "over_lat"]:
-            series[f"vehicle box {col} [{grp}]"] = (df, lambda g, col=col: g[col])
-    for name, (df, f) in series.items():
-        for q in (0.9, 0.99, 0.999):
-            y = np.array([f(df[df["tau"] == t]).quantile(q) for t in taus])
-            c, _ = nnls(A, y)
-            print(f"    {name:32s} p{q*100:g}: c0 {c[0]:.2f}  c1 {c[1]:.2f}  2c2 {2*c[2]:.2f}   fit max err {np.abs(A @ c - y).max():.2f}")
 
     # 3. physical bounds from 1 s chords
     C = chords(o)
