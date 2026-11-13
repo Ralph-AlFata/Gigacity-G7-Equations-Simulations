@@ -54,6 +54,8 @@ def test_repo_config_loads_and_round_trips():
     (lambda r: r["ego"].update(rho0_m=True), "finite number"),
     (lambda r: r["tracking"].update(e_theta_bar_rad=3.2), "≤ π"),
     (lambda r: r["solver"].update(time_tolerance_s=0.02), "must not exceed"),
+    (lambda r: r["solver"].update(method="fancy"), "must be one of"),
+    (lambda r: r["objects"].update(no_velocity="drop"), "must be one of"),
 ])  # fmt: skip
 def test_config_rejects_bad_values(change, message):
     raw = yaml.safe_load((REPO / "configs" / "horizon.yaml").read_text())
