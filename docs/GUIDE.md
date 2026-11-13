@@ -584,8 +584,11 @@ scripts/              one-off spike scripts that print the evidence quoted in ti
   spike_t004_egomotion.py     online vs offline egomotion
   spike_t005_lidar.py         lidar format, frame, timing, motion compensation
   spike_t006_rig_origin.py    is the rig origin the rear axle?
+  spike_t024_object_motion.py how objects move against the H bounds (T024)
+  t024_worked_examples.py     the worked examples of the revised derivation (T024)
 tests/                pytest; synthetic tests always run, real-data tests need data/raw/
 configs/              horizon.yaml: the parameters of the H equations
+docs/derivation/      horizon_derivation.tex: the revised derivation of H (T024, for review)
 tickets/              the project tracker (epics, tickets, decisions, evidence)
 old/                  the previous pipeline, reference only
 data/                 not in git: raw/, scene/, reference/, clip_lists/
