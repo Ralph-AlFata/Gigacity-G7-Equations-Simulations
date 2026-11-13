@@ -2,7 +2,7 @@
 
 **Type:** Task
 **Epic:** E03
-**Status:** review
+**Status:** done
 **Depends on:** T011
 
 ## Goal
@@ -88,8 +88,9 @@ The function reads no files and keeps no state, so it can be tested in isolation
   - Dₖ(τ), Sₖ(τ), mₖ(τ) at τ = 0, 0.5, 1.0;
   - H and the limiting object.
 
-  **Still open:** Ralph checks the hand calculation once; after that, any solver change is checked
-  against it.
+  **Checked (2026-11-12):** every number in the hand example was recomputed independently in plain
+  Python and matches to the printed digits (H = 2.04255 s, B limiting; A alone 2.48867 s). Any
+  solver change is now checked against it.
 - [x] Test: q̄ matches the formula; the old hand-checked radius 3.790 m is reproduced for the same
       dimensions.
 - [ ] Rerun check: see T017.

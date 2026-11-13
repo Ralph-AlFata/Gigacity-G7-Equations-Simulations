@@ -67,8 +67,8 @@ checklist item inside the ticket, not a nested folder.
 | T010 | Task | Stream a scene to Rerun | E02 | done | T007 |
 | E03 | Epic | Horizon replay | — | in-progress | E02 |
 | T011 | Task | Reference format + recorded-path reference | E03 | done | T007 |
-| T012 | Task | Alpamayo trajectory import | E03 | todo | T011 |
-| T013 | Task | Horizon config + baseline H solver | E03 | review | T011 |
+| T012 | Task | Alpamayo trajectory import | E03 | done | T011 |
+| T013 | Task | Horizon config + baseline H solver | E03 | done | T011 |
 | T014 | Task | Horizon runner: one H per plan | E03 | todo | T008, T012, T013 |
 | T015 | Task | Safety check: was H actually safe? | E03 | todo | T014 |
 | T016 | Experiment | H: how long, and was it safe? | E03 | todo | T014, T015 |

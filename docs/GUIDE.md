@@ -264,6 +264,34 @@ ref, meta = read_reference("data/reference/b789fab8-41f1-4cf3-b7f8-a8e94939f67d/
 plan = ref[ref["tick"] == 50]          # the plan made at 5.0 s: where the car went from there
 ```
 
+### `horizon-reference alpamayo`: import Alpamayo plans (T012)
+
+```sh
+uv run horizon-reference alpamayo --clips <clip_id> --from <dir>
+```
+
+- **What it reads** (the contract the snapshot process writes, one folder per clip):
+
+  ```
+  <dir>/<clip_id>/run.json                 model, ego_source, snapshot_interval_s, n_cameras, history_s, ...
+  <dir>/<clip_id>/t_<t0_us:09d>.npz        one per snapshot, e.g. t_002000000.npz for t0 = 2.0 s
+  ```
+
+  Each `.npz` holds `clip_id`, `t0_us` (clip clock, the scene's `timestamp_us`), `pred_xyz`
+  (1, 1, S, 64, 3) and `pred_rot` (1, 1, S, 64, 3, 3), exactly as Alpamayo 1.5 returns them: in the
+  rig frame at t0, at t0 + 0.1 ... t0 + 6.4 s, S samples.
+- **What it writes:** `data/reference/<clip>/<ego_source>/alpamayo/`, same format as above: one plan
+  per (snapshot tick, sample), 65 steps (0 to 6.4 s).
+- **How:**
+  - Each snapshot goes to the scene tick with the same timestamp, within 1 ms. Anything else is
+    refused, as is a tick with less than 1.6 s of history.
+  - The loader's transform is undone with the scene's ego pose at t0:
+    `xyz_world = R_t0 · xyz_local + xyz_t0`. Both use the rear axle, so no offset.
+  - Alpamayo has no step 0; the importer adds it as the ego pose at t0. Speed is the distance
+    between steps over 0.1 s; step 0's is the scene's speed at t0.
+  - `meta.json` keeps `run.json` and a check value `step1_gap_m`: the first step's length minus
+    0.1 s at the ego's speed. Near 0 means the plan starts the way the car is moving.
+
 ### The H solver (T013)
 
 `configs/horizon.yaml` holds every parameter of the equations, in SI units: ρ0, ē_v, ē_θ, ε_p, ε_v, ā,
@@ -550,6 +578,7 @@ horizon_pipeline/
   reference/
     format.py         the reference format: columns, validation, read/write
     recorded.py       the recorded-path reference (the ego's own future)
+    alpamayo.py       the Alpamayo import (T012)
     cli.py            horizon-reference
 scripts/              one-off spike scripts that print the evidence quoted in tickets
   spike_t004_egomotion.py     online vs offline egomotion
@@ -585,6 +614,8 @@ uv run pytest -k lidar                 # by name
 | `test_view.py` | f-theta projection equals NVIDIA's SDK; boxes land where they should in a camera; interpolation between ticks; a synthetic clip with a video recorded to `.rrd` and read back |
 | `test_scene_real.py` | the real clips: grid and columns, parked cars stay still, no impossible jumps, lidar columns, near objects observed |
 | `test_reference.py` | the reference format (round trip, each kind of bad file refused) and the recorded path on a synthetic ego |
+| `test_alpamayo.py` | the Alpamayo import: a known pose and plan land at known world points, the loader's transform is undone exactly, 3 samples give 3 plans, off-grid and other bad snapshots refused |
+| `test_alpamayo_real.py` | the real clips: snapshots made from the ego's own future with the loader's transform import back onto the ego track |
 | `test_horizon.py` | the config's validation, the solver against analytic crossings, caps, refusal of NaN inputs, and the hand example in `tests/hand_example.md` |
 | `test_horizon_real.py` | every recorded plan of the real clips solves, with consistent outputs |
 | `test_reference_real.py` | the real clips: every step of every recorded plan lies exactly on the ego's track |
