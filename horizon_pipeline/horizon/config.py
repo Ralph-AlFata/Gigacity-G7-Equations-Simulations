@@ -11,9 +11,14 @@ DEFAULT_CONFIG = Path("configs/horizon.yaml")
 SECTIONS = {
     "ego": ["r_veh_m", "rho0_m"],
     "tracking": ["e_v_bar_mps", "e_theta_bar_rad"],
-    "objects": ["eps_p_m", "eps_v_mps", "a_bar_mps2"],
+    "objects": ["eps_p_m", "eps_v_mps", "a_bar_mps2", "no_velocity"],
     "horizon": ["t_valid_s"],
-    "solver": ["grid_s", "time_tolerance_s"],
+    "solver": ["method", "grid_s", "time_tolerance_s"],
+}
+# Settings that are a word, not a number, and the words allowed.
+CHOICES = {
+    "method": ["baseline"],  # the H equations used (T013); new methods are added to the runner's registry
+    "no_velocity": ["exclude", "static"],  # an in-scene object without a velocity yet (a track's first tick)
 }
 POSITIVE = {"r_veh_m", "t_valid_s", "grid_s", "time_tolerance_s"}  # > 0; every other number is ≥ 0
 
@@ -34,6 +39,8 @@ class HorizonConfig:
     t_valid_s: float
     grid_s: float
     time_tolerance_s: float
+    method: str = "baseline"
+    no_velocity: str = "exclude"
 
     def to_dict(self) -> dict:
         """Back to the YAML layout, e.g. for `config_used.yaml`."""
@@ -57,6 +64,11 @@ def parse_config(raw: dict) -> HorizonConfig:
             raise ConfigError(f"[{section}] missing keys {missing}")
         for key in keys:
             v = got[key]
+            if key in CHOICES:
+                if v not in CHOICES[key]:
+                    raise ConfigError(f"{section}.{key} must be one of {CHOICES[key]}, not {v!r}")
+                values[key] = v
+                continue
             if key == "r_veh_m" and v == "auto":
                 values[key] = None
                 continue

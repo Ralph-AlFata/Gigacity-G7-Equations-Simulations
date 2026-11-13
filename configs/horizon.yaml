@@ -14,11 +14,14 @@ objects:
   eps_p_m: 0.3           # bound on the position-estimate error ε_p
   eps_v_mps: 0.5         # bound on the velocity-estimate error ε_v
   a_bar_mps2: 2.0        # bound on the object's acceleration ā
+  no_velocity: exclude   # in-scene object with no velocity yet (a track's first tick):
+                         #   exclude = left out of H but counted; static = treated as standing still
   # r_k = half of the box's planar diagonal
 
 horizon:
   t_valid_s: 6.4         # T_cap = min(plan's remaining duration, t_valid); 6.4 s = Alpamayo's plan length
 
 solver:
+  method: baseline       # which H equations (the runner's registry); baseline = the PDF's (T013)
   grid_s: 0.01           # spacing of the τ grid searched for the first crossing
   time_tolerance_s: 0.001  # bisection stops when the crossing is bracketed this tightly

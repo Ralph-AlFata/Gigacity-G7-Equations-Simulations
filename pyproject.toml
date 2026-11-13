@@ -24,6 +24,7 @@ horizon-fetch = "horizon_pipeline.raw.cli:main"
 horizon-catalog = "horizon_pipeline.raw.catalog_cli:main"
 horizon-scene = "horizon_pipeline.scene.cli:main"
 horizon-reference = "horizon_pipeline.reference.cli:main"
+horizon-run = "horizon_pipeline.horizon.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]

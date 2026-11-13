@@ -87,7 +87,10 @@ uv run horizon-scene view --clip b789fab8-41f1-4cf3-b7f8-a8e94939f67d
 # 5. the recorded-path references: at each tick, where the car actually drove afterwards (~1 s)
 uv run horizon-reference recorded --clips-file clips_selected_train.txt --ego-source both
 
-# 6. run the tests (~1 min; the real-data tests run only if data/raw/ is filled)
+# 6. one H per plan, for the recorded stand-in (~1 s per clip and source)
+uv run horizon-run --clips-file clips_selected_train.txt --ego-source both --reference recorded --name baseline
+
+# 7. run the tests (~1 min; the real-data tests run only if data/raw/ is filled)
 uv run pytest
 ```
 
@@ -296,7 +299,11 @@ uv run horizon-reference alpamayo --clips <clip_id> --from <dir>
 
 `configs/horizon.yaml` holds every parameter of the equations, in SI units: ρ0, ē_v, ē_θ, ε_p, ε_v, ā,
 `t_valid_s` and the solver grid. Edit it there. `load_config` refuses unknown or missing keys,
-negative values and ē_θ > π.
+negative values and ē_θ > π. Two settings are words, not numbers:
+- `solver.method`: which H equations (`baseline`, the PDF's). A new method is added to `SOLVERS` in
+  `horizon_pipeline/horizon/run.py` and picked here.
+- `objects.no_velocity`: what the runner does with an in-scene object that has no velocity yet (a
+  track's first tick): `exclude` (left out of H, but counted) or `static` (treated as standing still).
 
 `solve(plan, objects, r_veh, cfg)` (in `horizon_pipeline/horizon/solver.py`) computes H for one plan,
 with the PDF's baseline equations, from numbers only:
@@ -323,6 +330,26 @@ print(h.H_s, h.limiting_track_id, h.capped)
   decides what to do with it.
 - `tests/hand_example.md` works one case out by hand (H = 2.04255 s, limited by a pedestrian). The
   tests check the solver against it.
+
+### `horizon-run`: one H per plan (T014)
+
+```sh
+uv run horizon-run --clips-file clips_selected_train.txt --ego-source both --reference recorded --name baseline
+```
+
+- **What it does:** for every plan (tick, sample) of one reference source, H is computed once, from
+  the objects with `in_scene = true` at that tick only. Nothing later is read.
+- **What it writes:** `results/<name>/<clip>/<ego_source>/<reference>/`:
+  - `horizons.parquet`: one row per plan, with `tick`, `t_s`, `sample`, `reference_source`, the
+    solver's outputs (`H_s`, `capped`, `limiting_track_id`, `margin_at_0_m`, `T_cap_s`, `q_bar_mps`,
+    `v_ref_bar_mps`, `r_veh_m`), `n_in_scene`, `n_no_velocity`, `no_velocity_track_ids` and
+    `ego_speed_mps`;
+  - `config_used.yaml`: the config exactly as used;
+  - `meta.json`: counts (plans, ticks with and without a plan, capped), the date, and the SHA-256 of
+    every input.
+- Reference sources are run one at a time and land in separate folders; they are never combined.
+- **What to expect now:** with the baseline disks, H = 0 at about half of the city ticks (a car in
+  the next lane is ~3.5 m away; the disks need ~6.5 m). See T014's outcome for the numbers.
 
 ---
 
@@ -575,6 +602,8 @@ horizon_pipeline/
   horizon/
     config.py         configs/horizon.yaml -> a validated HorizonConfig
     solver.py         the baseline H equations for one plan
+    run.py            the runner: one H per plan, results writer (T014)
+    cli.py            horizon-run
   reference/
     format.py         the reference format: columns, validation, read/write
     recorded.py       the recorded-path reference (the ego's own future)
@@ -617,6 +646,8 @@ uv run pytest -k lidar                 # by name
 | `test_alpamayo.py` | the Alpamayo import: a known pose and plan land at known world points, the loader's transform is undone exactly, 3 samples give 3 plans, off-grid and other bad snapshots refused |
 | `test_alpamayo_real.py` | the real clips: snapshots made from the ego's own future with the loader's transform import back onto the ego track |
 | `test_horizon.py` | the config's validation, the solver against analytic crossings, caps, refusal of NaN inputs, and the hand example in `tests/hand_example.md` |
+| `test_run.py` | the runner: causality (an object changed at t+1 leaves H at t alone), `in_scene = false` ignored, rows only where plans exist, one H per sample, the `no_velocity` settings, the `method` registry, the results files |
+| `test_run_real.py` | the real clips: one row per plan with consistent values; deleting every object row after t leaves H at t unchanged |
 | `test_horizon_real.py` | every recorded plan of the real clips solves, with consistent outputs |
 | `test_reference_real.py` | the real clips: every step of every recorded plan lies exactly on the ego's track |
 
