@@ -1,8 +1,9 @@
 % The clearance horizon H: a revised derivation (T024).
 % Build: tectonic horizon_derivation.tex   (or: latexmk -pdf horizon_derivation.tex)
-% Every number in this document is printed by one of two scripts:
+% Every number in this document is printed by one of three scripts:
 %   uv run python scripts/spike_t024_object_motion.py   (diagnosis of the baseline, Section 2)
 %   uv run python scripts/t024_worked_examples.py       (worked examples, Section 7)
+%   uv run python scripts/t024_real_data_horizons.py    (all plans of our clips, Section 8)
 % Design rule: the scenarios shape the structure of the equations; no parameter is fitted to our data.
 \documentclass[11pt]{article}
 \usepackage[a4paper,margin=2.4cm]{geometry}
@@ -105,6 +106,11 @@ E4 passing a parked car at 10\,m/s & 0.76 & 0.84 / 0.00 & 1.05 / 0.00 \\
 \bottomrule
 \end{tabular}
 \end{center}
+
+\paragraph{On all 1\,005 plans of our clips} (Section~\ref{sec:clips}): the contact horizon fixes the
+geometry problem ($H=0$ for 6\% of plans instead of 52\%, median 1.25\,s instead of 0); the reaction
+horizon, the safe deadline, is strict ($\Hr=0$ for 64\%), and how strict depends on decisions, not on
+fitted numbers: the fallback braking, a lane map, and the responsibility rules.
 
 \begin{itemize}[leftmargin=*]
   \item \textbf{Following} (E2) reduces exactly to the RSS safe distance: $\Hr$ is the response time the
@@ -538,9 +544,10 @@ assumptions.
 \begin{definition}
 With $\Ego(\tau)=\Rect\big(\text{footprint at }(\pref(\tau),\psiref(\tau))\big)$ enlarged by $\rho$,
 \[
-\Hc=\inf\Big\{\tau\in[0,\Tcap]:\ \exists k\in\mathcal K(t),\ \Ego(\tau)\cap\Ohat_k(\tau)\ne\emptyset\Big\},
+\Hc=\inf\Big\{\tau\in[0,\Tcap]:\ \exists k\in\mathcal K'(t),\ \Ego(\tau)\cap\Ohat_k(\tau)\ne\emptyset\Big\},
 \]
-and $\Hc=\Tcap$ (capped) if there is no such $\tau$.
+and $\Hc=\Tcap$ (capped) if there is no such $\tau$. $\mathcal K'(t)$ excludes the followers of (A2)
+(Assumption~\ref{ass:resp}): a rear-end contact is the follower's responsibility whenever it happens.
 \end{definition}
 This is the baseline's definition with the new regions. It answers ``how long can the plan be followed
 without a possible contact''; it is the right quantity for question A of T023, but not a safe deadline
@@ -560,8 +567,8 @@ footprint enlarged by $\rho$.
 \[
 \Hr=\sup\Big\{s\in[0,\Hc]:\ \forall s'\in[0,s],\ \forall\tau\in[0,\tau_{\mathrm{stop}}(s')],\ \forall k\in\mathcal K'(t):\ \Ego_{s'}(\tau)\cap\Ohat_k(\tau)=\emptyset\Big\},
 \]
-and $\Hr=0$ if even $F_0$ fails. $\mathcal K'(t)\subseteq\mathcal K(t)$ excludes the objects of
-Assumption~\ref{ass:resp}.
+and $\Hr=0$ if even $F_0$ fails. With (A3), lane-following vehicles keep their lane during the
+fallback (their region has no sideways terms).
 \end{definition}
 
 The car's deadline is then $t+\Hr-\Delta_{\mathrm{sw}}$, with $\Delta_{\mathrm{sw}}$ the time to take a
@@ -749,6 +756,72 @@ $\Hc=2.95$\,s, $\Hr=0.96$\,s. Physical (a sprint start): 1.65 / 0.00\,s.
 $3.0-1.0-0.885=1.115$\,m), ego at 10\,m/s. If it may pull out (default), it can creep forward and, with the
 heading uncertainty, sideways into the ego's path: $\Hc=1.05$\,s, $\Hr=0$. If stopped vehicles yield
 (option Y), it never limits $H$. Which one applies is a rule about responsibility, not a number.
+
+%======================================================================
+\section{On our clips}\label{sec:clips}
+\texttt{scripts/t024\_real\_data\_horizons.py} runs a vectorised prototype of Sections~\ref{sec:geometry}--\ref{sec:horizons}
+on every plan of the recorded stand-in (5 clips, offline poses, 1\,005 plans; known objects as in T014),
+next to the baseline with the same objects. Its grids are coarser than the worked examples' (0.05\,s for
+$\Hc$, 0.1\,s for the switch time), and it reports the last time known to be clear; on the four example
+scenes it agrees with \texttt{t024\_worked\_examples.py} to within those steps. Nothing is fitted:
+these numbers \emph{evaluate} the assumptions, they did not set them.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lccccccc}
+\toprule
+ & $H=0$ & median & mean & p10 & p90 & $<2$\,s & capped \\
+\midrule
+baseline (PDF) & 52\% & 0.00 & 0.72 & 0.00 & 2.34 & 87\% & 6\% \\
+revised $\Hc$, foreseeable & 6\% & 1.25 & 1.43 & 0.25 & 2.50 & 70\% & 10\% \\
+revised $\Hr$, foreseeable & 64\% & 0.00 & 0.45 & 0.00 & 1.70 & 94\% & --- \\
+revised $\Hc$, physical & 6\% & 0.55 & 0.76 & 0.05 & 1.75 & 99\% & 5\% \\
+revised $\Hr$, physical & 86\% & 0.00 & 0.12 & 0.00 & 0.20 & 99\% & --- \\
+\bottomrule
+\end{tabular}
+\caption{Horizons [s] on all plans. ``$<2$\,s'': below the inference time (four cameras on an A40).
+Foreseeable: lane-following vehicles with the RSS lateral response, $\varepsilon_\psi=0.05$\,rad,
+$b_e=4$\,m/s$^2$, (A1) and (A2).}
+\label{tab:clips}
+\end{table}
+
+\paragraph{The contact horizon.} Per plan, $\Hc$ is longer than the baseline's $H$ for 76\% of plans, equal
+for 11\%, shorter for 13\%. Of the 521 plans with baseline $H=0$, the median $\Hc$ is 0.85\,s; 12\% stay at
+0: the ego labelled as an object in 23958e60 (ticks 2--9), the zero-length plan at each clip's last tick,
+and two stretches of b4d979af where the nearly stopped ego has pedestrians walking within 1\,m of it
+and a car creeping 0.7--1.2\,m alongside. The shorter cases are mostly the highway clip ca823746 (55\% of
+its plans; median 2.05 against 2.14\,s): at highway gaps the disks no longer dominate, and the foreseeable
+set lets a lead brake at 10\,m/s$^2$ and others accelerate at 3.5\,m/s$^2$, more than the baseline's 2\,m/s$^2$.
+
+\paragraph{The reaction horizon.} $\Hr$ is the safe deadline, and it is strict: braking at 4\,m/s$^2$ behind a
+vehicle that may brake at 10\,m/s$^2$ needs RSS-sized gaps, which normal traffic does not keep, and the
+fallback is long at speed (5.6\,s and 60\,m from 22\,m/s). Table~\ref{tab:hr} shows that the decisions of
+Section~\ref{sec:pipeline}, not fitted numbers, set it.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Variant (foreseeable set) & median $\Hr$ [s] & $\Hr=0$ \\
+\midrule
+default ($\varepsilon_\psi=0.05$, $b_e=4$\,m/s$^2$) & 0.00 & 64\% \\
+heading known to 0.02\,rad & 0.00 & 58\% \\
+lane map ($\varepsilon_\psi=0$) & 0.10 & 47\% \\
+stopped vehicles yield (option Y) & 0.00 & 53\% \\
+neighbours keep their lane (A3) & 0.30 & 43\% \\
+Y, A3 and a lane map together & 1.00 & 34\% \\
+without (A2) & 0.00 & 68\% \\
+\midrule
+fallback braking $b_e=6$\,m/s$^2$ & 0.10 & 43\% \\
+fallback braking $b_e=8$\,m/s$^2$ & 0.50 & 32\% \\
+\bottomrule
+\end{tabular}
+\caption{Reaction horizon on all 1\,005 plans under the switches of Section~\ref{sec:horizons}.}
+\label{tab:hr}
+\end{table}
+
+By ego speed (default): below 2\,m/s the median $\Hr$ is 1.30\,s; from 2 to 15\,m/s it is 0 for 61--72\% of
+plans; above 15\,m/s for 90\%. With $b_e=8$\,m/s$^2$ the share above 15\,m/s drops to 20\% (median 0.60\,s).
 
 %======================================================================
 \section{Parameters}\label{sec:params}

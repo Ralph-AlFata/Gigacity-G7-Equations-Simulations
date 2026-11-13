@@ -55,6 +55,22 @@ response, heading-estimate error 0.05 rad, fallback braking 4 m/s²):
 | E3 hand-example pedestrian | 2.00 | 1.65 / 0.00 | 2.95 / 0.96 |
 | E4 passing a parked car, 10 m/s | 0.76 | 0.84 / 0.00 | 1.05 / 0.00 (capped if parked cars yield) |
 
+All 1 005 plans (`uv run python scripts/t024_real_data_horizons.py`, ~1 min; prototype, agrees with
+the worked examples to within its 0.05 / 0.1 s grids):
+
+| | H = 0 | Median | Mean | p90 | < 2 s | Capped |
+|---|---|---|---|---|---|---|
+| Baseline (PDF) | 52% | 0.00 | 0.72 | 2.34 | 87% | 6% |
+| Revised H_c (foreseeable) | 6% | 1.25 | 1.43 | 2.50 | 70% | 10% |
+| Revised H_r (foreseeable) | 64% | 0.00 | 0.45 | 1.70 | 94% | — |
+
+- H_c is longer than the baseline for 76% of plans and shorter for 13%, almost all on the highway clip
+  ca823746 (lead may brake at 10 m/s²; others may accelerate at 3.5 m/s²).
+- The remaining H_c = 0 plans are known or genuine: the ego-as-object quirk (23958e60 ticks 2–9), the
+  zero-length last plan of each clip, pedestrians within 1 m and a creeping car in b4d979af.
+- H_r is set by decisions: median 0.00 s by default; 1.00 s with a lane map, option Y and (A3); 0.50 s
+  with fallback braking at 8 m/s² instead of 4.
+
 What generalises:
 - Following reduces exactly to the RSS safe distance.
 - A car beside the ego is limited by how well its heading is known (or by a lane map), not by its
