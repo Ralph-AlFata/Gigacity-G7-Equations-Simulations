@@ -1,0 +1,960 @@
+% The clearance horizon H: a revised derivation (T024).
+% Build: tectonic horizon_derivation.tex   (or: latexmk -pdf horizon_derivation.tex)
+% Every number in this document is printed by one of three scripts:
+%   uv run python scripts/spike_t024_object_motion.py   (diagnosis of the baseline, Section 2)
+%   uv run python scripts/t024_worked_examples.py       (worked examples, Section 7)
+%   uv run python scripts/t024_real_data_horizons.py    (all plans of our clips, Section 8)
+% Design rule: the scenarios shape the structure of the equations; no parameter is fitted to our data.
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{theorem}{Theorem}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\newtheorem{assumption}{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Disk}{\mathcal{D}}
+\newcommand{\Occ}{\mathcal{O}}
+\newcommand{\Ohat}{\widehat{\mathcal{O}}}
+\newcommand{\Ego}{\mathcal{E}}
+\newcommand{\Hc}{H_{\mathrm{c}}}
+\newcommand{\Hr}{H_{\mathrm{r}}}
+\newcommand{\Tcap}{T_{\mathrm{cap}}}
+\newcommand{\pref}{p_{\mathrm{ref}}}
+\newcommand{\psiref}{\psi_{\mathrm{ref}}}
+\newcommand{\vref}{v_{\mathrm{ref}}}
+\DeclareMathOperator{\dist}{dist}
+\DeclareMathOperator{\Rect}{Rect}
+
+\title{The clearance horizon $H$:\\[2pt] a revised derivation}
+\author{T024 --- draft for review}
+\date{12 November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+When the car receives a plan from the Alpamayo server, it computes once a horizon $H$: how long the
+plan may be followed before the next plan must have arrived. The baseline equations
+(\texttt{Deadline\_Aware\_Multi\_Vehicle\_Serving.pdf}) give $H=0$ for 52\% of the 1\,005 plans of our
+five clips. This document diagnoses why and derives a replacement. The scenarios in our data decide
+the \emph{structure} of the new equations: oriented boxes instead of disks, separate allowances along and
+across each object's heading, objects that cannot move sideways without moving forward, and a horizon
+that leaves time to react. The \emph{numbers} come from physics, regulation and published literature,
+never from fitting our five clips, which are far too few. The result is a horizon that is safe under
+explicitly stated assumptions about other road users; the data then test how often those assumptions
+held.
+\end{abstract}
+
+\tableofcontents
+
+%======================================================================
+\section*{At a glance}
+\addcontentsline{toc}{section}{At a glance}
+
+\paragraph{What goes wrong in the baseline} (5 clips, recorded stand-in, 1\,005 plans, T014 runner):
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Geometry, not motion, makes $H=0$.} For 98.4\% of the 516 plans with $H=0$ the real boxes
+    are more than 0.5\,m apart at $\tau=0$ (median 1.48\,m). The disks need 6.4\,m between centres; a car in
+    the next lane is about 3.5\,m away.
+  \item \textbf{The object bound has the wrong structure.} It is the same in every direction, although
+    objects move very differently along and across their heading, and although a car cannot move
+    sideways without moving forward. Its acceleration term is neither a physical bound nor a typical value.
+  \item \textbf{The ego allowance grows linearly forever}, to 5.3\,m at 6.4\,s at 10\,m/s, although a
+    tracking controller keeps the error bounded.
+  \item \textbf{``First possible contact'' leaves no time to act.} If the next plan arrives exactly at
+    $t+H$, a contact may already be unavoidable.
+  \item \textbf{The assumptions are implicit.} What the baseline assumes about other road users is hidden in
+    three numbers, so neither its guarantee nor its failures can be interpreted.
+\end{enumerate}
+
+\paragraph{The revision.}
+\begin{enumerate}[leftmargin=*,label=(\alph*)]
+  \item Oriented boxes for ego and objects, the same geometry as the safety check (T015). The ego's
+    tracking error enters as $\rho_p+2R_F\sin(\bar e_\theta/2)=0.39$\,m.
+  \item Each object's predicted region is a box in its own frame with separate front, back and side
+    allowances, derived from explicit assumptions. Two assumption sets: \emph{physical} (what the object can
+    do) and \emph{foreseeable} (what a normal road user does: RSS, UN regulations, published studies).
+  \item Two horizons: $\Hc$, the first possible contact, and $\Hr\le\Hc$, the last moment from which
+    braking along the plan still avoids every predicted region. The deadline uses $\Hr$.
+  \item The guarantee is exact and conditional: if the stated assumptions hold, no contact with a known
+    object. The data measure how often each assumption failed (validation, not calibration).
+\end{enumerate}
+
+\paragraph{What the examples show} (Section~\ref{sec:examples}, $H$ in seconds, ``foreseeable'' with the
+RSS lateral assumption and a heading-estimate error of 0.05\,rad):
+
+\begin{center}
+\begin{tabular}{p{6.0cm}ccc}
+\toprule
+Scene & baseline & physical $\Hc$ / $\Hr$ & foreseeable $\Hc$ / $\Hr$ \\
+\midrule
+E1 car in the next lane, abreast, 10\,m/s & 0.00 & 0.15 / 0.00 & 1.02 / 0.00 \\
+E2 following at 4\,m/s, 4\,m gap & 1.36 & 0.73 / 0.03 & 0.97 / 0.46 \\
+E3 pedestrian crossing (hand example) & 2.00 & 1.65 / 0.00 & 2.95 / 0.96 \\
+E4 passing a parked car at 10\,m/s & 0.76 & 0.84 / 0.00 & 1.05 / 0.00 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{On all 1\,005 plans of our clips} (Section~\ref{sec:clips}): the contact horizon fixes the
+geometry problem ($H=0$ for 6\% of plans instead of 52\%, median 1.25\,s instead of 0); the reaction
+horizon, the safe deadline, is strict ($\Hr=0$ for 64\%), and how strict depends on decisions, not on
+fitted numbers: the fallback braking, a lane map, and the responsibility rules.
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Following} (E2) reduces exactly to the RSS safe distance: $\Hr$ is the response time the
+    gap still affords.
+  \item \textbf{A car beside the ego} (E1) is limited by how well its heading is known, not by how it
+    behaves: with a lane map ($\varepsilon_\psi=0$) and RSS lateral behaviour it never limits $H$; without
+    one it always does, over the 2.5\,s that braking to a stop takes (Table~\ref{tab:e1}).
+  \item \textbf{A parked car} (E4) is a question of responsibility: if stopped vehicles yield when pulling
+    out, it does not limit $H$; if not, $\Hr=0$ when passing it closely at 10\,m/s.
+\end{itemize}
+
+%======================================================================
+\section{Setting and notation}\label{sec:setting}
+
+\subsection{The system}
+At time $t$ the car receives a plan from the server. It computes $H$ once, from what it knows at $t$,
+and attaches the deadline $t+H$ to its next inference request; the server's scheduler serves the
+earliest deadline first (T023). Two properties are wanted:
+\begin{description}[leftmargin=*]
+  \item[(R1) Safe:] if the next plan arrives by $t+H$, the car can still avoid contact with every object
+    it knew about at $t$, as long as those objects behave as assumed.
+  \item[(R2) Useful:] subject to (R1), $H$ is as large as possible.
+\end{description}
+$H$ may only use data known at $t$ (the causality rule).
+
+\subsection{How the data are used, and how they are not}\label{sec:datause}
+Our dataset has five clips: about 900 vehicle tracks and 190 VRU tracks, and successive ticks of one
+track are strongly correlated. Any parameter fitted to it would describe these five clips, and testing
+$H$ on the same clips would then be circular. So:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{The data shape the structure.} They show \emph{which} effects matter (geometry, along versus
+    across the heading, stopped versus moving objects, turning, estimate noise, reaction time) and therefore
+    which terms the equations must have (Section~\ref{sec:lessons}).
+  \item \textbf{The numbers come from elsewhere:} physics (friction, kinematics), regulation (UN R157,
+    R79), safety models (RSS and its reference implementation), and published studies of driving and
+    walking. Where no source exists the value is an explicit assumption, and the examples show how
+    much $H$ depends on it.
+  \item \textbf{The data test the result.} The safety check (T015) replays the true future and records, for
+    every plan, whether an assumption was violated and which one. That is a measurement of the assumptions,
+    with a confidence bound, not a fit.
+  \item \textbf{Sanity checks only.} Where a measured quantity can be compared with a sourced value (for
+    example the label noise of parked cars against the assumed estimate errors), the comparison is shown,
+    but the value is not changed to match.
+\end{itemize}
+
+\subsection{What we know at $t$}
+\begin{center}
+\begin{tabular}{p{4.2cm}p{6.0cm}p{4.6cm}}
+\toprule
+Symbol & Meaning & Source \\
+\midrule
+$\pref(\tau),\ \psiref(\tau),\ \vref(\tau)$ & plan: rear-axle position, heading, speed, $\tau\in[0,T_p]$ & reference (T011/T012) \\
+$F_e=[x_-,x_+]\times[y_-,y_+]$ & ego footprint about the rear axle & scene \texttt{meta.json} \\
+$R_F=\max_{r\in F_e}\|r\|$ & farthest footprint point from the rear axle & $=3.790$\,m \\
+$\hat c_k,\ \hat\psi_k$ & object box centre and heading at $t$ & \texttt{objects.parquet} $x,y,\mathit{yaw}$ \\
+$\ell_k,\ w_k$ & half-length and half-width of the box & \texttt{length}/2, \texttt{width}/2 \\
+$\hat w_k,\ \hat v_k=\hat w_k\cdot u_k$ & velocity; speed along the heading & $v_x,v_y$ (backward difference, T009) \\
+$u_k,\ n_k$ & unit vectors along and across $\hat\psi_k$ & $u_k=(\cos\hat\psi_k,\sin\hat\psi_k)$ \\
+class & vehicle / pedestrian / static / unknown & \texttt{class\_group}, \texttt{label\_class} \\
+$\mathcal K(t)$ & known objects: \texttt{in\_scene} at $t$, velocity known & T008, T014 \\
+\bottomrule
+\end{tabular}
+\end{center}
+Our ego footprint is $x\in[-1.032,\,3.656]$, $y\in[-0.9995,\,0.9995]$\,m (4.69\,m $\times$ 2.00\,m).
+Alpamayo gives a rotation per step, so $\psiref$ is known; for the recorded stand-in it is the scene's
+yaw.
+
+\paragraph{Sets.} $\Disk(c,r)$ is the closed disk of centre $c$ and radius $r$; $A\oplus B=\{a+b\}$ is
+the Minkowski sum; $\Disk_r=\Disk(0,r)$; $\dist(A,B)=\min_{a\in A,b\in B}\|a-b\|$.
+$\Rect(c,\psi,a,b)$ is the rectangle of centre $c$, heading $\psi$, half-length $a$ and half-width $b$.
+$\Occ_k(\tau)$ is the region object $k$ really occupies at $t+\tau$, and $\Ohat_k(\tau)$ the region we
+predict for it. $\Ego(\tau)$ is the region the ego is guaranteed to stay in.
+
+%======================================================================
+\section{The baseline, and what goes wrong}\label{sec:baseline}
+
+\subsection{The baseline in one line}
+In the notation of the PDF, for every known object,
+\begin{equation}
+m_k(\tau)=\big\|\pref(\tau)-(\hat c_k+\hat w_k\tau)\big\|-\Big[r_{\mathrm{veh}}+r_k+\rho_0+\varepsilon_p+(\bar q+\varepsilon_v)\tau+\tfrac12\bar a\tau^2\Big],
+\qquad H=\inf\{\tau\le\Tcap:\min_k m_k(\tau)\le0\},
+\label{eq:baseline}
+\end{equation}
+with $\bar q=\bar e_v+2\bar v_{\mathrm{ref}}\sin(\bar e_\theta/2)$, $r_{\mathrm{veh}}$ the disk about the
+rear axle that covers the footprint ($3.790$\,m) and $r_k$ half the object's diagonal.
+
+\subsection{What is right, and kept}
+\begin{itemize}[leftmargin=*]
+  \item The kinematic (no-slip) model of the ego and the error variables $e_p,e_\theta,e_v$.
+  \item The velocity-mismatch bound $\|\dot p-\dot p_{\mathrm{ref}}\|\le|e_v|+2\vref|\sin(e_\theta/2)|$:
+    correct, and the chord identity $\|h(\theta)-h(\theta_{\mathrm{ref}})\|=2|\sin(e_\theta/2)|$ behind
+    it is reused in Lemma~\ref{lem:ego} and Proposition~\ref{prop:veh}.
+  \item The Taylor-with-remainder bound
+    $\|o(t+\tau)-\hat o-\hat w\tau\|\le\varepsilon_p+\varepsilon_v\tau+\tfrac12\bar a\tau^2$: correct for an
+    object that can accelerate in any direction. It is kept for pedestrians (Proposition~\ref{prop:ped}).
+  \item $H$ as an infimum over $[0,\Tcap]$, $\Tcap=\min(T_{\mathrm{rem}},T_{\mathrm{valid}})$.
+\end{itemize}
+
+\subsection{Problem 1: disks make geometry, not motion, the limit}
+The ego disk is centred on the rear axle, so it must reach the front corners: $r_{\mathrm{veh}}=3.79$\,m.
+Its area is $45.1\,\text{m}^2$, 4.8 times the footprint ($9.4\,\text{m}^2$); sideways it extends 3.79\,m
+where the car extends 1.00\,m. A $3.89\times1.77$\,m car (the median size in our data) has $r_k=2.14$\,m.
+At $\tau=0$ the baseline requires $3.79+2.14+0.2+0.3=6.43$\,m between the ego's rear axle and the car's
+centre; the centre of a car in the next lane is about 3.5\,m to the side.
+
+\textbf{Data.} Of the 516 plans with $H=0$, 461 are limited by an object beside the ego
+($|y_{\mathrm{rel}}|\ge1.5$\,m), 431 by a vehicle and 85 by a pedestrian or rider. The real box gap at
+$\tau=0$ between the ego and the limiting object is: p10 0.95\,m, median 1.48\,m, p90 3.67\,m; only 1.6\%
+of them actually touch (\texttt{spike\_t024\_object\_motion.py}, part 5).
+
+\subsection{Problem 2: the object bound has the wrong structure}
+Write the constant-velocity residual $r_k(\tau)=c_k(t+\tau)-\hat c_k-\hat w_k\tau$. What the scenarios
+show (all known vehicles at all ticks of the five clips; the numbers diagnose, they are not used as
+parameters):
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Shape in time.} The error quantiles grow roughly linearly with $\tau$ (p99: 1.05, 2.22,
+    4.24, 9.59\,m at 0.5, 1, 2, 4\,s): in the first seconds, not knowing the velocity and heading precisely
+    matters more than acceleration. The baseline's $\beta$ grows mostly quadratically: it is exceeded by
+    1.8\% of vehicle cases at 0.5\,s and is 44\,m wide at 6.4\,s.
+  \item \textbf{Direction.} At p90, the error across the heading is about a third of the error along it.
+    A disk cannot express that.
+  \item \textbf{Stopped versus moving.} After 1\,s, the true box of a stopped vehicle sticks out of its
+    predicted box by 0.43\,m sideways (p99), that of a moving vehicle by 2.0\,m. A stopped car cannot
+    move sideways at all until it moves forward; a disk lets it.
+  \item \textbf{Turning.} The large sideways excursions of moving cars come mostly from turns at
+    intersections, where the car's heading changes by tens of degrees within seconds.
+  \item \textbf{The acceleration term is not a bound.} Speed changes over 1\,s windows reach $-7.2$\,m/s$^2$,
+    and cars with ABS brake at 8.5--10.6\,m/s$^2$ \cite{miller2023}; $\bar a=2$ is not a physical limit.
+    It is not a typical value either: normal driving rarely brakes harder than 2\,m/s$^2$ \cite{bosetti2014}.
+  \item \textbf{Estimates are noisy.} T009 measured object velocity noise at 0.47--0.72\,m/s p95 from
+    parked tracks, as slow drift that averaging does not remove; parked boxes' headings wander by
+    $1.0^\circ$ RMS (median track).
+\end{itemize}
+
+\subsection{Problem 3: the ego allowance grows linearly forever}
+The PDF integrates the velocity mismatch open-loop: $\|e_p(\tau)\|\le\rho_0+\bar q\tau$. With
+$\bar e_\theta=0.05$\,rad at 10\,m/s, $\bar q=0.8$\,m/s and $\rho(6.4)=5.3$\,m. The bound is correct
+\emph{if} the heading and speed errors stay within $\bar e_\theta,\bar e_v$ and nothing corrects them;
+but a tracking controller is precisely what keeps $e_p$ small. Closed-loop, the standard object is a
+bounded \emph{tube}: $\|e_p\|\le\bar\rho_p$ for all $\tau$ \cite{mayne2005}. On our dataset the ego follows
+the plan exactly, so this term is never tested (T018).
+
+\subsection{Problem 4: ``first possible contact'' leaves no time to act}
+The baseline's $H$ is the first time at which a contact \emph{becomes possible}. Suppose the next plan
+arrives exactly at $t+H$. At that instant the ego's region already touches an object's region, whatever
+the new plan says: a car cannot leave its position instantly, and at 10\,m/s it needs 12.5\,m and 2.5\,s
+to stop at 4\,m/s$^2$. What is needed is the \emph{time-to-react}: the longest time the plan can be continued
+before an evasive manoeuvre must, and still can, be executed \cite{hillenbrand2006,sontges2018}.
+
+\subsection{Problem 5: the assumptions are implicit}
+$\varepsilon_v$ and $\bar a$ encode, at once, perception quality and the behaviour of other road users,
+in every direction and for every kind of object. When the data contain a residual of 14\,m after 1\,s (a
+labelling artefact) or a car turning across the ego's path, the baseline cannot say which assumption
+failed. The revision separates them: estimate errors ($\varepsilon_p,\varepsilon_v,\varepsilon_\psi$),
+longitudinal behaviour, lateral behaviour, turning, and responsibility, each stated and sourced.
+
+\subsection{Problem 6: two geometries for one question}
+$H$ uses disks while the safety check (T015) uses boxes. The same geometry should be used for both, so
+that a failure means ``an assumption was violated'' and never ``the shapes differ''.
+
+\subsection{Lessons for the structure}\label{sec:lessons}
+\begin{center}
+\begin{tabular}{p{6.4cm}p{8.4cm}}
+\toprule
+What the scenarios show & What the equations must contain \\
+\midrule
+L1 Clear boxes, overlapping disks & Oriented boxes; the ego's size enters only through the heading error (Section~\ref{sec:geometry}). \\
+L2 Along $\ne$ across the heading & Separate front, back and side allowances in each object's frame (Section~\ref{sec:objects}). \\
+L3 Stopped objects stay put & No reversing; no sideways motion without forward motion (nonholonomic vehicles). \\
+L4 Turning makes the large sideways moves & Turning as an explicit, separate assumption (Proposition~\ref{prop:veh} or~\ref{prop:lane}, option T). \\
+L5 Estimates drift & Explicit estimate errors $\varepsilon_p,\varepsilon_v,\varepsilon_\psi$, growing with distance travelled. \\
+L6 Contact may already be unavoidable at $H$ & A reaction horizon with a fallback manoeuvre (Section~\ref{sec:horizons}). \\
+L7 Rare large deviations exist & No bound covers everything: state assumptions, measure violations (Section~\ref{sec:validation}). \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%======================================================================
+\section{Geometry: boxes instead of disks}\label{sec:geometry}
+
+\subsection{The ego's region}
+\begin{lemma}[Ego body under tracking error]\label{lem:ego}
+Let the true rear-axle pose be $(p,\theta)$ and the plan's $(\pref,\psiref)$, with
+$\|p-\pref\|\le\rho_p$ and $|\theta-\psiref|\le\bar e_\theta\le\pi$. Then every point of the true body
+lies in
+\[
+\Rect_{\mathrm{ref}}\oplus\Disk_{\rho},\qquad \rho=\rho_p+2R_F\sin(\bar e_\theta/2),
+\]
+where $\Rect_{\mathrm{ref}}$ is the footprint placed at the plan's pose.
+\end{lemma}
+\begin{proof}
+A body point with coordinates $r\in F_e$ is at $x=p+R(\theta)r$; its planned position is
+$x_{\mathrm{ref}}=\pref+R(\psiref)r\in\Rect_{\mathrm{ref}}$. Then
+$x-x_{\mathrm{ref}}=(p-\pref)+R(\psiref)\big(R(e_\theta)-I\big)r$ with $e_\theta=\theta-\psiref$. A rotation
+by $e_\theta$ moves a vector of length $\|r\|$ by the chord $2|\sin(e_\theta/2)|\,\|r\|$ (the PDF's
+identity), and $\|r\|\le R_F$. Hence $\|x-x_{\mathrm{ref}}\|\le\rho_p+2R_F\sin(\bar e_\theta/2)$.
+\end{proof}
+With $\rho_p=0.2$\,m and $\bar e_\theta=0.05$\,rad (the current configuration):
+$\rho=0.2+2\cdot3.790\cdot\sin(0.025)=0.2+0.189=0.389$\,m. The 3.79\,m appears only multiplied by
+$2\sin(\bar e_\theta/2)\approx0.05$.
+
+\paragraph{Which $\rho_p$?} Closed-loop, $\rho_p$ is the controller's tube radius, a constant that should
+come from the controller's specification and be validated when a controller exists (T018). The PDF's
+open-loop bound $\rho_p(\tau)=\rho_0+\bar q\tau$ remains available as a conservative option. In the replay
+the ego follows the plan exactly, so $\rho$ only makes $H$ more conservative; the safety check uses
+$\rho=0$ (T023).
+
+\subsection{Separation of inflated sets}
+\begin{lemma}\label{lem:inflate}
+For compact $A,B\subset\R^2$ and $a,b\ge0$:
+$(A\oplus\Disk_a)\cap(B\oplus\Disk_b)=\emptyset\iff\dist(A,B)>a+b$.
+\end{lemma}
+\begin{proof}
+The sets intersect iff there are $x\in A$, $y\in B$, $\|u\|\le a$, $\|v\|\le b$ with $x+u=y+v$, i.e.\ iff
+some $\|x-y\|\le a+b$; by compactness the minimum $\dist(A,B)$ is attained.
+\end{proof}
+Moreover $\Rect(c,\psi,a,b)\oplus\Disk_\rho\subseteq\Rect(c,\psi,a+\rho,b+\rho)$: the enlarged rectangle
+only adds the four corner squares, $(4-\pi)\rho^2=0.13\,\text{m}^2$ for $\rho=0.389$\,m. We use the
+enlarged rectangle, so that every test below is between two rectangles, or a rectangle and a disk.
+
+\subsection{Testing two rectangles}
+Two convex polygons are disjoint iff some edge normal of one of them separates their projections
+(the separating-axis theorem, used for 3-D boxes with 15 candidate axes in \cite{gottschalk1996}; for
+two rectangles in the plane, their 4 edge normals suffice). When they are disjoint, their distance is the
+smallest distance from a vertex of one to an edge of the other. General convex sets: GJK
+\cite{gilbert1988}. A rectangle against a disk $\Disk(c,r)$: they are disjoint iff the distance from $c$
+to the rectangle exceeds $r$. All of this is constant work per pair and per time step.
+
+An alternative that keeps disks: following \cite{ziegler2010}, cover the footprint with $n$ equal disks
+along its length; elementary geometry gives the radius $\sqrt{(L/2n)^2+(W/2)^2}$ (also Eq.~4 of
+\cite{tolksdorf2024}). For our ego: 2.55\,m ($n=1$, centred on the box, not the rear axle), 1.54\,m ($n=2$),
+1.27\,m ($n=3$). Even $n=3$ loses about 0.5\,m against exact boxes beside a car in the next lane, and the
+safety check needs exact boxes anyway; we use boxes.
+
+\subsection{A rotating box}
+\begin{lemma}[Rotation envelope]\label{lem:rot}
+Let a rectangle of half-dimensions $\ell\ge w$ be rotated about its centre by any angle
+$|\phi|\le\bar\phi\le\pi/2$. All such rectangles lie in the rectangle with the original axes and
+half-dimensions
+\[
+\ell'(\bar\phi)=\begin{cases}\ell\cos\bar\phi+w\sin\bar\phi & \bar\phi<\arctan(w/\ell)\\ \sqrt{\ell^2+w^2} & \text{otherwise}\end{cases},
+\qquad
+w'(\bar\phi)=\begin{cases}w\cos\bar\phi+\ell\sin\bar\phi & \bar\phi<\arctan(\ell/w)\\ \sqrt{\ell^2+w^2} & \text{otherwise.}\end{cases}
+\]
+\end{lemma}
+\begin{proof}
+The rotated rectangle's extent along the original long axis is
+$h_u(\phi)=\ell|\cos\phi|+w|\sin\phi|=\sqrt{\ell^2+w^2}\cos(|\phi|-\arctan(w/\ell))$, which increases up to
+$|\phi|=\arctan(w/\ell)$ and decreases after; across it,
+$h_n(\phi)=w|\cos\phi|+\ell|\sin\phi|=\sqrt{\ell^2+w^2}\sin(|\phi|+\arctan(w/\ell))$, which increases up to
+$|\phi|=\arctan(\ell/w)$. A set whose projections on both axes are bounded lies in the corresponding
+rectangle.
+\end{proof}
+
+%======================================================================
+\section{The objects: predicted regions}\label{sec:objects}
+
+Every predicted region is a rectangle with the object's axes $(u_k,n_k)$ at $t$, described by a
+longitudinal interval $[L_k^-(\tau),L_k^+(\tau)]$ (along $u_k$, measured from $\hat c_k$) and a lateral
+half-extent $\Lambda_k(\tau)$:
+\[
+\Ohat_k(\tau)=\Big\{\hat c_k+\alpha u_k+\beta n_k:\ \alpha\in[L_k^-,L_k^+],\ |\beta|\le\Lambda_k\Big\}.
+\]
+The regions are derived from assumptions; the same propositions are used with two parameter sets,
+\emph{physical} and \emph{foreseeable} (Section~\ref{sec:sets}).
+
+\subsection{Vehicles that may turn}
+\begin{assumption}[Turning vehicles]\label{ass:veh}
+For a known vehicle $k$, over $[0,T]$:
+\begin{enumerate}[label=(V\arabic*),leftmargin=*]
+  \item \emph{Estimates at $t$:} $\|c_k(t)-\hat c_k\|\le\varepsilon_p$, $|\psi_k(t)-\hat\psi_k|\le\varepsilon_\psi$,
+    $|v_k(t)-\hat v_k|\le\varepsilon_v$.
+  \item \emph{No slip, forward:} the rear-axle point $P_k$ moves with velocity $v_k\,(\cos\psi_k,\sin\psi_k)$,
+    $v_k\ge0$ (no reversing within the horizon; constraint C3 of \cite{althoff2016}).
+  \item \emph{Longitudinal limits:} $-b_{\max}\le\dot v_k\le a_{\max}$ and $v_k\le v_{\max}$ (C4 and C1 of
+    \cite{althoff2016}).
+  \item \emph{Turning limits:} curvature $|\kappa_k|\le\kappa_{\max}$ and lateral acceleration
+    $v_k^2|\kappa_k|\le a_\perp(v_k)$, i.e.\ $|\dot\psi_k|\le\omega(v_k)=\min\big(\kappa_{\max}v_k,\ a_\perp(v_k)/v_k\big)$.
+  \item \emph{Box:} the box is rigid, with its centre $c_k=P_k+l_k(\cos\psi_k,\sin\psi_k)$, $0\le l_k\le\ell_k$.
+\end{enumerate}
+\end{assumption}
+
+Define, for $s\in[0,T]$,
+\begin{align*}
+v^+(s)&=\min\big(v_{\max},\ \hat v_k+\varepsilon_v+a_{\max}s\big), & v^-(s)&=\max\big(0,\ \hat v_k-\varepsilon_v-b_{\max}s\big),\\
+\bar\omega(s)&=\max_{v\in[v^-(s),\,v^+(s)]}\omega(v), & \Omega(\tau)&=\int_0^\tau\bar\omega(s)\,ds,\qquad \bar\Delta(\tau)=\varepsilon_\psi+\Omega(\tau),\\
+S^+(\tau)&=\int_0^\tau v^+(s)\,ds, & S^-(\tau)&=\int_0^\tau \underline{g}(s)\,ds,\quad
+\underline{g}=\begin{cases}v^-\cos\bar\Delta & \bar\Delta\le\pi/2\\ v^+\cos\min(\bar\Delta,\pi) & \text{otherwise}\end{cases}\\
+\bar d(\tau)&=\int_0^\tau v^+(s)\sin\min\big(\bar\Delta(s),\tfrac\pi2\big)\,ds.
+\end{align*}
+
+\begin{proposition}[Region of a turning vehicle]\label{prop:veh}
+Under Assumption~\ref{ass:veh}, for every $\tau\in[0,T]$, $\Occ_k(\tau)\subseteq\Ohat_k(\tau)$ with
+\begin{align*}
+L^-&=S^--\ell_k\big(1-\cos\min(\bar\Delta,\pi)\big)-\ell'-\varepsilon_p, \qquad
+L^+=S^++\ell_k(1-\cos\varepsilon_\psi)+\ell'+\varepsilon_p,\\
+\Lambda&=\bar d+\ell_k\min\Big(2\sin\tfrac{\min(\Omega,\pi)}2,\ \sin\min\big(\bar\Delta,\tfrac\pi2\big)+\sin\varepsilon_\psi\Big)+w'+\varepsilon_p,
+\end{align*}
+where $\ell'=\ell'(\min(\bar\Delta,\pi/2))$ and $w'=w'(\min(\bar\Delta,\pi/2))$ from Lemma~\ref{lem:rot}.
+\end{proposition}
+\begin{proof}
+By (V3), $v^-(s)\le v_k(s)\le v^+(s)$. By (V4), $|\psi_k(s)-\psi_k(0)|\le\Omega(s)$, hence by (V1)
+$|\psi_k(s)-\hat\psi_k|\le\bar\Delta(s)$. By (V2) the rear axle moves by
+$\int v_k(\cos,\sin)(\psi_k)\,ds$; its component along $u_k$ is $\int v_k\cos(\psi_k-\hat\psi_k)$, which lies
+in $[S^-,S^+]$ (for the lower end use $v_k\cos\alpha\ge\underline g$, since $v_k\ge0$); its component along
+$n_k$ is at most $\bar d$ in absolute value. By (V5) the centre moves by the rear axle's displacement
+plus $l_k\big(h(\psi_k(\tau))-h(\psi_k(0))\big)$. Along $u_k$ this term is
+$l_k\big(\cos(\psi_k(\tau)-\hat\psi_k)-\cos(\psi_k(0)-\hat\psi_k)\big)\in\big[-\ell_k(1-\cos\min(\bar\Delta,\pi)),\ \ell_k(1-\cos\varepsilon_\psi)\big]$;
+across it, its size is at most both the chord $2\ell_k\sin(\min(\Omega,\pi)/2)$ and
+$\ell_k(\sin\min(\bar\Delta,\pi/2)+\sin\varepsilon_\psi)$. The initial centre error adds $\varepsilon_p$.
+Finally the box's heading differs from $\hat\psi_k$ by at most $\bar\Delta$, so by Lemma~\ref{lem:rot} it
+lies in the rectangle of half-dimensions $(\ell',w')$ about its centre.
+\end{proof}
+
+$\omega(v)$ rises as $\kappa_{\max}v$ at low speed (a tight turning circle) and falls as $a_\perp(v)/v$ at
+high speed (the tyres, or the driver's comfort, limit the lateral acceleration), so $\bar\omega$ is the
+largest yaw rate the vehicle could have at any speed it could have.
+
+\paragraph{Reading the bound.} For small angles and constant speed $\hat v$: $S^\pm\approx(\hat v\pm\varepsilon_v)\tau\pm\tfrac12a\tau^2$,
+and $S^-$ stops growing once the object could have stopped, because it cannot reverse (L3). Sideways,
+$\bar d\approx\varepsilon_\psi\hat v\tau+\tfrac12a_\perp\tau^2$. A parked car ($\hat v=0$) has $S^-\approx0$,
+and it moves sideways only by turning, which it can only do while moving forwards
+($\bar\omega=\kappa_{\max}v^+$): exactly lesson L3.
+
+\subsection{Vehicles that keep their lane}
+Turning (L4) is what makes the region of a moving car wide. On a road, most vehicles do not turn: they
+follow their lane, and their sideways motion is a small drift or a lane change. RSS formalises this as
+the lateral proper response \cite{rss2017}: during a response time a vehicle may accelerate sideways at
+most at $a^{\mathrm{lat}}_{\mathrm{acc}}$, after which it brakes sideways at least at $a^{\mathrm{lat}}_{\mathrm{brk}}$
+until its lateral speed is zero, plus a fluctuation margin $\mu$.
+
+\begin{assumption}[Lane-following vehicles]\label{ass:lane}
+(V1)--(V3) and (V5) of Assumption~\ref{ass:veh} hold, and over $[0,T]$:
+\begin{enumerate}[label=(F\arabic*),leftmargin=*]
+  \item \emph{Heading line kept:} the vehicle's heading stays $\psi_k(t)$, the true heading at $t$.
+  \item \emph{Sideways motion:} relative to its heading line, its lateral speed is at most $\nu(s)$, where
+    $\nu$ ramps at $a^{\mathrm{lat}}_{\mathrm{acc}}$ up to at most $v^{\mathrm{lat}}_{\max}$ during the response time
+    $\rho_o$ and then decreases at $a^{\mathrm{lat}}_{\mathrm{brk}}$ to zero; its lateral position may also
+    fluctuate by $\mu$.
+\end{enumerate}
+\end{assumption}
+Let $D(\tau)=\min\big(\int_0^\tau\nu,\ \tfrac12\kappa_{\max}S^+(\tau)^2\big)+\mu$: the second term holds because a
+vehicle that turns no tighter than $\kappa_{\max}$ is, after a distance $S$, at most $\kappa_{\max}S^2/2$
+from its heading line; it keeps a stopped car from sliding sideways (L3).
+
+\begin{proposition}[Region of a lane-following vehicle]\label{prop:lane}
+Under Assumption~\ref{ass:lane}, $\Occ_k(\tau)\subseteq\Ohat_k(\tau)$ with
+\begin{align*}
+L^-&=\cos\varepsilon_\psi\int_0^\tau v^-(s)\,ds-D\sin\varepsilon_\psi-\ell'(\varepsilon_\psi)-\varepsilon_p,\qquad
+L^+=S^++D\sin\varepsilon_\psi+\ell'(\varepsilon_\psi)+\varepsilon_p,\\
+\Lambda&=\sin\varepsilon_\psi\,S^++D+w'(\varepsilon_\psi)+\varepsilon_p.
+\end{align*}
+\end{proposition}
+\begin{proof}
+By (F1) the heading is constant, so the centre moves exactly as the rear axle: a distance in
+$[\int v^-,S^+]$ along the true heading line, which is tilted by at most $\varepsilon_\psi$ against $u_k$, and,
+by (F2), at most $D$ across that line. Projecting both on $u_k$ and $n_k$ gives the terms with
+$\cos\varepsilon_\psi$ and $\sin\varepsilon_\psi$. The box keeps its heading, within $\varepsilon_\psi$ of
+$\hat\psi_k$, so Lemma~\ref{lem:rot} applies with $\bar\phi=\varepsilon_\psi$. The initial centre error adds
+$\varepsilon_p$.
+\end{proof}
+
+The term $\sin\varepsilon_\psi\,S^+$ deserves attention: if the heading is only known to
+$\varepsilon_\psi=0.05$\,rad, a car at 10\,m/s may be drifting sideways at 0.5\,m/s \emph{as far as we know},
+although it is not moving sideways at all. A lane map removes it: the heading line is then the lane's
+direction, $\varepsilon_\psi\to0$ (scene E1).
+
+\paragraph{Lateral assumptions in the literature.} No regulation or standard states one ``foreseeable''
+lateral speed. The published options, all of which are used in Section~\ref{sec:examples}:
+\begin{center}
+\begin{tabular}{p{3.6cm}p{6.6cm}p{4.6cm}}
+\toprule
+Assumption & Values & Source \\
+\midrule
+RSS lateral response & $\rho_o=2$\,s, $a^{\mathrm{lat}}_{\mathrm{acc}}=0.2$, $a^{\mathrm{lat}}_{\mathrm{brk}}=0.8$\,m/s$^2$, $\mu=0.1$\,m (suggested, ``open for discussion'') & \cite{rss2017} Def.~6, \cite{adrsslib} \\
+IEEE 2846-style bounds & $v^{\mathrm{lat}}_{\max}=0.31$\,m/s, $a^{\mathrm{lat}}_{\max}=1.18$\,m/s$^2$, $\lambda_{\max}=0.10$\,m (vehicles next to the ego, extracted from the public UniD dataset) & \cite{ieee2846,certad2023} \\
+Lane change & at most 1\,m/s$^2$ added lateral acceleration, done in $<5$\,s; human lane changes take 5--6\,s, i.e.\ about 0.7\,m/s across a lane & \cite{unr79,toledo2007} \\
+Cut-in & lateral speeds up to 3.0\,m/s in the regulation's cut-in simulations; lateral wandering 0.375\,m & \cite{unr157} Annex~3 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Option T (turning).} Without a map we cannot know where vehicles may turn. By default every
+vehicle is lane-following (Proposition~\ref{prop:lane}); with option T, vehicles slower than $v_{\mathrm{turn}}$
+may also turn (Proposition~\ref{prop:veh} with normal-driving limits). The safety check measures how often
+the default is violated by turning vehicles (L4).
+
+\paragraph{Option Y (yielding).} A stopped vehicle that starts moving into the traffic must give way. With
+option Y, stopped vehicles ($\|\hat w_k\|<0.5$\,m/s) are treated as static boxes; without it, they may pull
+out as lane-following vehicles.
+
+\subsection{Pedestrians and other holonomic objects}
+\begin{proposition}[Pedestrians]\label{prop:ped}
+If $\|c_k(t)-\hat c_k\|\le\varepsilon_p$, $\|w_k(t)-\hat w_k\|\le\varepsilon_v$, $\|\dot w_k\|\le a_p$ and
+$\|w_k\|\le v_{p,\max}$ over $[0,T]$, then
+\[
+\Occ_k(\tau)\subseteq\Big[\Disk\big(\hat c_k+\hat w_k\tau,\ \varepsilon_p+\varepsilon_v\tau+\tfrac12a_p\tau^2\big)\cap\Disk\big(\hat c_k,\ \varepsilon_p+v_{p,\max}\tau\big)\Big]\oplus\Disk_{r_k},
+\]
+with $r_k=\sqrt{\ell_k^2+w_k^2}$.
+\end{proposition}
+\begin{proof}
+The first disk is the PDF's derivation (Taylor with integral remainder); the second follows from the
+speed limit. The body lies within $r_k$ of its centre.
+\end{proof}
+The ego misses the intersection of the two disks whenever it misses either, so the margin against a
+pedestrian is the \emph{largest} of the margins against the two disks. Set-based pedestrian prediction
+\cite{koschi2018} uses $a_p=0.6$\,m/s$^2$ and $v_{p,\max}=2.0$\,m/s and raises the speed limit when a
+pedestrian is observed to exceed it; we do the same ($v_{p,\max}\ge\|\hat w_k\|+0.1$\,m/s).
+
+\paragraph{Static objects} (class \texttt{static}) are their box enlarged by $\varepsilon_p$. Objects of an
+unknown class are treated as pedestrians with vehicle-level limits.
+
+\subsection{Two parameter sets}\label{sec:sets}
+\begin{description}[leftmargin=*]
+  \item[Physical:] what an object \emph{can} do. Turning vehicles (Proposition~\ref{prop:veh}) with
+    friction-limited braking and cornering; sprinting pedestrians. Guarantees against everything
+    physically possible, at the price of a very short $H$ next to moving traffic (E1: 0.15\,s).
+  \item[Foreseeable:] what a \emph{normal} road user does. Lane-following vehicles
+    (Proposition~\ref{prop:lane}) with RSS lateral behaviour, normal acceleration, and still full braking:
+    a lead vehicle that brakes as hard as it can is foreseeable \cite{unr157}. Walking pedestrians.
+\end{description}
+$H$ is computed with the foreseeable set. The physical set has two roles: it decides which objects are
+\emph{relevant} (an object that cannot physically reach the ego's swept region cannot cause a contact,
+whatever it does), and the gap between the two horizons shows how much of $H$ rests on behavioural
+assumptions.
+
+%======================================================================
+\section{Two horizons}\label{sec:horizons}
+
+\subsection{Contact horizon}
+\begin{definition}
+With $\Ego(\tau)=\Rect\big(\text{footprint at }(\pref(\tau),\psiref(\tau))\big)$ enlarged by $\rho$,
+\[
+\Hc=\inf\Big\{\tau\in[0,\Tcap]:\ \exists k\in\mathcal K'(t),\ \Ego(\tau)\cap\Ohat_k(\tau)\ne\emptyset\Big\},
+\]
+and $\Hc=\Tcap$ (capped) if there is no such $\tau$. $\mathcal K'(t)$ excludes the followers of (A2)
+(Assumption~\ref{ass:resp}): a rear-end contact is the follower's responsibility whenever it happens.
+\end{definition}
+This is the baseline's definition with the new regions. It answers ``how long can the plan be followed
+without a possible contact''; it is the right quantity for question A of T023, but not a safe deadline
+(Problem 4).
+
+\subsection{Reaction horizon}
+\begin{definition}[Fallback]
+For a switch time $s\in[0,\Tcap]$, the fallback $F_s$ follows the plan until $s$ and then brakes along
+the plan's path at $b_e$ until it stops. With $\sigma(\tau)$ the plan's arc length and
+$v_s=\vref(s)$, its arc length is $\sigma(\tau)$ for $\tau\le s$ and
+$\sigma(s)+v_s(\tau-s)-\tfrac12b_e(\tau-s)^2$ for $s<\tau\le\tau_{\mathrm{stop}}=s+v_s/b_e$; its pose is the
+plan's pose at that arc length (extended straight beyond the plan's end). $\Ego_s(\tau)$ is its
+footprint enlarged by $\rho$.
+\end{definition}
+
+\begin{definition}[Reaction horizon]
+\[
+\Hr=\sup\Big\{s\in[0,\Hc]:\ \forall s'\in[0,s],\ \forall\tau\in[0,\tau_{\mathrm{stop}}(s')],\ \forall k\in\mathcal K'(t):\ \Ego_{s'}(\tau)\cap\Ohat_k(\tau)=\emptyset\Big\},
+\]
+and $\Hr=0$ if even $F_0$ fails. With (A3), lane-following vehicles keep their lane during the
+fallback (their region has no sideways terms).
+\end{definition}
+
+The car's deadline is then $t+\Hr-\Delta_{\mathrm{sw}}$, with $\Delta_{\mathrm{sw}}$ the time to take a
+received plan into execution. Properties:
+\begin{itemize}[leftmargin=*]
+  \item $\Hr\le\Hc$, since $F_s$ coincides with the plan on $[0,s]$.
+  \item $\Hr$ is a time-to-react \cite{hillenbrand2006,sontges2018}. Only braking along the path is tried,
+    and the regions over-approximate, so $\Hr$ is conservative. Braking until rest as the safety certificate
+    is the passive safety of \cite{macek2009}.
+  \item \textbf{The fallback braking} $b_e=4$\,m/s$^2$ is the level a minimum-risk manoeuvre aims for in UN R157
+    \cite{unr157}: missing a deadline should trigger a controlled stop, not an emergency stop.
+  \item \textbf{Recursive safety.} If the next plan arrives at $t+s$ with $s\le\Hr$, the fallback $F_s$ of
+    the \emph{current} plan is still clear. If the new plan's own $\Hr$ is 0, the car should not switch to
+    it but execute $F_s$: it never has to accept an unverified plan. This is the scheme of online
+    verification with fail-safe trajectories \cite{pek2020,pek2021}.
+\end{itemize}
+
+\begin{assumption}[Responsibility]\label{ass:resp}
+\begin{enumerate}[label=(A\arabic*),leftmargin=*]
+  \item \emph{Passive safety:} a contact that happens while the ego is at rest is not counted. Passive
+    motion safety ``guarantees that, if a collision takes place, the robot will be at rest''
+    \cite{bouraine2012}; \cite{macek2009} define it through a braking manoeuvre, as here. In $\Hr$, the
+    check ends at $\tau_{\mathrm{stop}}$.
+  \item \emph{Followers keep their distance:} a vehicle entirely behind the ego's rear bumper at $t$,
+    heading within $45^\circ$ of the ego, is responsible for not running into it while the ego brakes at
+    no more than $b_e$ \cite{rss2017}. Such vehicles are excluded from $\mathcal K'(t)$.
+  \item \emph{(Optional) Neighbours keep their lane:} a lane-following vehicle beside the ego is
+    responsible for its own lateral distance during the fallback, as in RSS's lateral rule. It then limits
+    $\Hc$ but not the fallback check.
+\end{enumerate}
+\end{assumption}
+All three are configuration switches. Without (A2), a fast car behind would make every braking fallback
+unsafe. Without (A3) and without a lane map, any car beside the ego makes $\Hr=0$ (E1). The safety check
+(T015) must apply the same rules, and report rear-end contacts separately: they are also the replay
+artefact T015 already anticipates (recorded objects do not react to a plan that brakes differently from
+the real car).
+
+\subsection{Car following reduces to RSS}
+\begin{proposition}\label{prop:rss}
+On a straight road, let the ego follow a plan at constant speed $v_e$ behind a lane-following vehicle
+with bumper gap $g$ at $t$ and speed $\hat v_f$, $v_f^-=\hat v_f-\varepsilon_v\le v_e$, with
+$\varepsilon_\psi=0$ and $b_e\le b_{\max}$. Then, with $m=\rho+\varepsilon_p$,
+\[
+\Hc=\frac{1}{v_e}\Big[g-m+\frac{(v_f^-)^2}{2b_{\max}}\Big]_+,\qquad
+\Hr=\frac{1}{v_e}\Big[g-m+\frac{(v_f^-)^2}{2b_{\max}}-\frac{v_e^2}{2b_e}\Big]_+ .
+\]
+\end{proposition}
+\begin{proof}
+The lead's rear is at least at $g+\int v^-$, its braking-to-stop distance from $v_f^-$ at $b_{\max}$
+once it has stopped. For $\Hc$: the ego's front at $v_e\tau$ reaches the lead's stopped rear when
+$v_e\tau=g-m+(v_f^-)^2/(2b_{\max})$, and the lead stops first because $v_f^-\le v_e$ and it brakes at once.
+For $\Hr$: the gap's derivative is the lead's speed minus the ego's; the lead starts no faster and brakes at
+least as hard and earlier, so it is never faster and the gap shrinks until the ego stops. The worst instant
+is the ego's stop: $v_es+v_e^2/(2b_e)+m<g+(v_f^-)^2/(2b_{\max})$.
+\end{proof}
+This is the RSS minimum safe longitudinal distance \cite{rss2017} read the other way round: the response
+time that the current gap still affords, with no acceleration during the response (the plan holds its
+speed). For $g=4$\,m, $v_e=\hat v_f=4$\,m/s, $\varepsilon_v=0.5$, $\varepsilon_p=0.3$, $\rho=0.389$,
+$b_{\max}=10$, $b_e=4$: $\Hc=(4-0.689+0.613)/4=0.981$\,s and $\Hr=(4-0.689+0.613-2)/4=0.481$\,s. The
+numerical solver gives 0.99 and 0.48\,s on its 0.01\,s grid, which checks the code.
+
+\subsection{The guarantee}\label{sec:guarantee}
+Call an object \emph{relevant} if its physical region can reach the region swept by the plan and its
+fallbacks within the horizon; $\mathcal K_{\mathrm{rel}}\subseteq\mathcal K'(t)$.
+\begin{theorem}\label{thm:guarantee}
+Assume Lemma~\ref{lem:ego}'s tube, Assumption~\ref{ass:resp}, the physical assumptions for every known
+object, and the foreseeable assumptions for every relevant one. Then the car, following the plan for any
+$s\le\Hr$ and then either a new verified plan or $F_s$, touches no known object while it is moving.
+\end{theorem}
+\begin{proof}
+For relevant objects, the definition of $\Hr$ makes $F_s$ clear of their foreseeable regions, which
+contain them, for every $s\le\Hr$; a verified new plan is clear by its own $\Hr$. Objects that are not
+relevant cannot reach the ego's swept region by the physical assumptions.
+\end{proof}
+The statement is exact but conditional, as in RSS and in online verification \cite{rss2017,pek2020}.
+Its value depends on how often the assumptions hold, which is what the data measure
+(Section~\ref{sec:validation}). Objects \emph{unknown} at $t$ (not yet seen, or not observed) are outside
+it; T015 counts their contacts separately, as decided in T023.
+
+\subsection{Computation}\label{sec:computation}
+\paragraph{Time grid.} Both horizons are found on a grid of step $\Delta$ ($0.01$\,s), then refined by
+bisection. Between grid points the true bodies move by at most half a step at their maximum point speed,
+so a continuous-time guarantee follows by enlarging each region by $\tfrac12\Delta$ times that speed:
+7.5\,cm at 15\,m/s, or choose a finer grid.
+
+\paragraph{Algorithm, per plan.}
+\begin{enumerate}[leftmargin=*]
+  \item Known objects $\mathcal K(t)$; drop those excluded by (A2); for each, precompute the profile of
+    Proposition~\ref{prop:veh}, \ref{prop:lane} or \ref{prop:ped} (cumulative sums on the grid).
+  \item Relevance filter with the physical set (one bounding test per object).
+  \item $\Hc$: first grid $\tau$ at which $\Ego(\tau)$ meets some $\Ohat_k(\tau)$, then bisection.
+  \item $\Hr$: for $s$ on a coarser grid (e.g.\ 0.05\,s) up to $\Hc$, check $F_s$ over
+    $[s,\tau_{\mathrm{stop}}(s)]$; $\Hr$ is the last $s$ before the first failure, refined by bisection
+    (binary search is also how \cite{tamke2011} compute such time measures quickly with many objects).
+\end{enumerate}
+Cost: $O(K\cdot N_\tau)$ constant-time tests for $\Hc$ and $O(K\cdot N_s\cdot N_{\mathrm{stop}})$ for $\Hr$;
+with $K\approx30$, $N_s=128$ and $N_{\mathrm{stop}}\le300$, about $10^6$ tests per plan, which vectorises.
+
+%======================================================================
+\section{Validation instead of calibration}\label{sec:validation}
+
+\paragraph{What the safety check measures.} For every plan, T015 replays the true future and records:
+whether a contact happened before $\Hc$, and during the fallback $F_{\Hr}$; and, for every known object,
+whether it left its predicted region, and through which assumption: estimate error at $t$, longitudinal
+(braking or acceleration beyond the limits), lateral (beyond the RSS envelope), turning (a lane-following
+vehicle that turned), or a labelling artefact. The result is a table of \emph{assumption violation rates},
+each with a confidence bound. With no violation in $n$ independent plans, the 95\% upper bound on the rate
+is about $3/n$ \cite{hanley1983}; plans close in time are not independent, so $n$ counts clips or
+well-separated plans.
+
+\paragraph{What to do with a violation rate.} If an assumption fails too often, it is revised \emph{for a
+reason that generalises}: a source that better describes normal behaviour, a structural change (option T
+near intersections, a lane map), or a perception requirement ($\varepsilon_\psi$). It is not shrunk or
+widened until the five clips pass.
+
+\paragraph{Later: calibration, when there is enough data.} With many clips, the same per-axis regions
+could be calibrated by split conformal prediction \cite{vovk2005,angelopoulos2023}: score each held-out
+object by how far its true box left the predicted box, and widen the regions by the
+$\lceil(n+1)(1-\delta)\rceil$-th smallest score, which guarantees coverage $\ge1-\delta$ for exchangeable
+data; \cite{lindemann2023} plan against such regions, and \cite{stankeviciute2021} cover multi-step
+forecasts. It needs $n\ge(1-\delta)/\delta$ independent examples per group: 999 tracks per group for
+$\delta=0.1\%$, against about 900 vehicle tracks in total today. That is why it is not used now.
+
+%======================================================================
+\section{Worked examples}\label{sec:examples}
+All numbers come from \texttt{scripts/t024\_worked\_examples.py}. Common settings: plan straight along
+$+x$ at constant speed; ego footprint as above, $\rho=0.389$\,m, fallback braking $b_e=4$\,m/s$^2$;
+parameters of Table~\ref{tab:params}; a $3.89\times1.77$\,m car; baseline with the repository's
+configuration and $r_{\mathrm{veh}}=3.79$\,m.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{5.6cm}ccccc}
+\toprule
+Scene & baseline & physical & foreseeable & option T & option Y \\
+\midrule
+E1 next-lane car abreast, 10\,m/s & 0.00 & 0.15 / 0.00 & 1.02 / 0.00 & 1.02 / 0.00 & 1.02 / 0.00 \\
+E2 following, 4\,m/s, 4\,m gap & 1.36 & 0.73 / 0.03 & 0.97 / 0.46 & 0.78 / 0.12 & 0.97 / 0.46 \\
+E3 pedestrian (hand example) & 2.00 & 1.65 / 0.00 & 2.95 / 0.96 & 2.95 / 0.96 & 2.95 / 0.96 \\
+E4 parked car, 10\,m/s past it & 0.76 & 0.84 / 0.00 & 1.05 / 0.00 & 0.84 / 0.00 & capped \\
+\bottomrule
+\end{tabular}
+\caption{$\Hc$ / $\Hr$ in seconds; ``capped'' means 6.4\,s for both.}
+\label{tab:examples}
+\end{table}
+
+\paragraph{E1: car in the next lane, abreast, both at 10\,m/s.} Centres 3.5\,m apart sideways; the real
+gap between the boxes is $3.5-1.0-0.885=1.615$\,m, the side room after the ego's allowance
+$1.615-0.389=1.226$\,m. Baseline: the disks need 6.43\,m at $\tau=0$, so $H=0$. Physically, a car at about
+9\,m/s may turn at about 1\,rad/s and swing its box into the ego in 0.15\,s. Foreseeable (lane-following,
+RSS lateral): $\Hc=1.02$\,s, and Table~\ref{tab:e1} shows what limits it: not the neighbour's behaviour but
+the drift $\sin\varepsilon_\psi\,S^+$ from not knowing its heading. $\Hr=0$ because braking to a stop takes
+2.5\,s, during which the neighbour (who may brake as well) stays alongside while that drift grows; with
+(A3), $\Hr=\Hc$.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+$\varepsilon_\psi$ & RSS lateral & IEEE 2846 / UniD & lane change (R79) & cut-in (R157) \\
+\midrule
+0 (lane map) & capped / capped & 2.80 / 0.29 & 1.54 / 0.00 & 1.05 / 0.00 \\
+0.01\,rad & 2.27 / 0.00 & 1.90 / 0.00 & 1.28 / 0.00 & 0.92 / 0.00 \\
+0.02\,rad & 1.76 / 0.00 & 1.46 / 0.00 & 1.09 / 0.00 & 0.81 / 0.00 \\
+0.05\,rad & 1.02 / 0.00 & 0.85 / 0.00 & 0.76 / 0.00 & 0.55 / 0.00 \\
+\bottomrule
+\end{tabular}
+\caption{Scene E1: $\Hc$ / $\Hr$ [s] against the heading-estimate error and the lateral assumption
+(Section~\ref{sec:objects}).}
+\label{tab:e1}
+\end{table}
+
+\paragraph{E2: following at 4\,m/s, 4\,m gap.} Baseline: centre distance $3.656+4+1.945=9.60$\,m against
+$6.43+1.0\tau+\tau^2$, so $H=1.36$\,s. Foreseeable: the lead may brake fully, $\Hc=0.97$\,s and $\Hr=0.46$\,s,
+as Proposition~\ref{prop:rss} predicts (0.98 and 0.48\,s with $\varepsilon_\psi=0$). With option T the lead,
+being slower than 5\,m/s, may also turn and swing its rear: 0.78 / 0.12\,s. A 1\,s headway at 4\,m/s affords
+about half a second of reaction: that is what RSS says too.
+
+\paragraph{E3: the pedestrian of the hand example.} Pedestrian at $(30,-8)$\,m walking at 1.5\,m/s
+towards the path; plan at 10\,m/s. Baseline 2.00\,s (2.04\,s in \texttt{tests/hand\_example.md}, which
+uses $r_{\mathrm{veh}}=2$ and $\bar e_\theta=0.1$). Foreseeable (walking: 0.6\,m/s$^2$, 2.0\,m/s):
+$\Hc=2.95$\,s, $\Hr=0.96$\,s. Physical (a sprint start): 1.65 / 0.00\,s.
+
+\paragraph{E4: passing a parked car.} Parked car 15\,m ahead, centre 3.0\,m to the side (gap
+$3.0-1.0-0.885=1.115$\,m), ego at 10\,m/s. If it may pull out (default), it can creep forward and, with the
+heading uncertainty, sideways into the ego's path: $\Hc=1.05$\,s, $\Hr=0$. If stopped vehicles yield
+(option Y), it never limits $H$. Which one applies is a rule about responsibility, not a number.
+
+%======================================================================
+\section{On our clips}\label{sec:clips}
+\texttt{scripts/t024\_real\_data\_horizons.py} runs a vectorised prototype of Sections~\ref{sec:geometry}--\ref{sec:horizons}
+on every plan of the recorded stand-in (5 clips, offline poses, 1\,005 plans; known objects as in T014),
+next to the baseline with the same objects. Its grids are coarser than the worked examples' (0.05\,s for
+$\Hc$, 0.1\,s for the switch time), and it reports the last time known to be clear; on the four example
+scenes it agrees with \texttt{t024\_worked\_examples.py} to within those steps. Nothing is fitted:
+these numbers \emph{evaluate} the assumptions, they did not set them.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lccccccc}
+\toprule
+ & $H=0$ & median & mean & p10 & p90 & $<2$\,s & capped \\
+\midrule
+baseline (PDF) & 52\% & 0.00 & 0.72 & 0.00 & 2.34 & 87\% & 6\% \\
+revised $\Hc$, foreseeable & 6\% & 1.25 & 1.43 & 0.25 & 2.50 & 70\% & 10\% \\
+revised $\Hr$, foreseeable & 64\% & 0.00 & 0.45 & 0.00 & 1.70 & 94\% & --- \\
+revised $\Hc$, physical & 6\% & 0.55 & 0.76 & 0.05 & 1.75 & 99\% & 5\% \\
+revised $\Hr$, physical & 86\% & 0.00 & 0.12 & 0.00 & 0.20 & 99\% & --- \\
+\bottomrule
+\end{tabular}
+\caption{Horizons [s] on all plans. ``$<2$\,s'': below the inference time (four cameras on an A40).
+Foreseeable: lane-following vehicles with the RSS lateral response, $\varepsilon_\psi=0.05$\,rad,
+$b_e=4$\,m/s$^2$, (A1) and (A2).}
+\label{tab:clips}
+\end{table}
+
+\paragraph{The contact horizon.} Per plan, $\Hc$ is longer than the baseline's $H$ for 76\% of plans, equal
+for 11\%, shorter for 13\%. Of the 521 plans with baseline $H=0$, the median $\Hc$ is 0.85\,s; 12\% stay at
+0: the ego labelled as an object in 23958e60 (ticks 2--9), the zero-length plan at each clip's last tick,
+and two stretches of b4d979af where the nearly stopped ego has pedestrians walking within 1\,m of it
+and a car creeping 0.7--1.2\,m alongside. The shorter cases are mostly the highway clip ca823746 (55\% of
+its plans; median 2.05 against 2.14\,s): at highway gaps the disks no longer dominate, and the foreseeable
+set lets a lead brake at 10\,m/s$^2$ and others accelerate at 3.5\,m/s$^2$, more than the baseline's 2\,m/s$^2$.
+
+\paragraph{The reaction horizon.} $\Hr$ is the safe deadline, and it is strict: braking at 4\,m/s$^2$ behind a
+vehicle that may brake at 10\,m/s$^2$ needs RSS-sized gaps, which normal traffic does not keep, and the
+fallback is long at speed (5.6\,s and 60\,m from 22\,m/s). Table~\ref{tab:hr} shows that the decisions of
+Section~\ref{sec:pipeline}, not fitted numbers, set it.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Variant (foreseeable set) & median $\Hr$ [s] & $\Hr=0$ \\
+\midrule
+default ($\varepsilon_\psi=0.05$, $b_e=4$\,m/s$^2$) & 0.00 & 64\% \\
+heading known to 0.02\,rad & 0.00 & 58\% \\
+lane map ($\varepsilon_\psi=0$) & 0.10 & 47\% \\
+stopped vehicles yield (option Y) & 0.00 & 53\% \\
+neighbours keep their lane (A3) & 0.30 & 43\% \\
+Y, A3 and a lane map together & 1.00 & 34\% \\
+without (A2) & 0.00 & 68\% \\
+\midrule
+fallback braking $b_e=6$\,m/s$^2$ & 0.10 & 43\% \\
+fallback braking $b_e=8$\,m/s$^2$ & 0.50 & 32\% \\
+\bottomrule
+\end{tabular}
+\caption{Reaction horizon on all 1\,005 plans under the switches of Section~\ref{sec:horizons}.}
+\label{tab:hr}
+\end{table}
+
+By ego speed (default): below 2\,m/s the median $\Hr$ is 1.30\,s; from 2 to 15\,m/s it is 0 for 61--72\% of
+plans; above 15\,m/s for 90\%. With $b_e=8$\,m/s$^2$ the share above 15\,m/s drops to 20\% (median 0.60\,s).
+
+%======================================================================
+\section{Parameters}\label{sec:params}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{2.0cm}p{3.4cm}p{3.2cm}p{4.6cm}p{2.2cm}}
+\toprule
+Symbol & Meaning & Value & Source & Our data (sanity) \\
+\midrule
+$\rho_p$ & ego tracking tube & 0.2\,m & assumption (current config); controller spec, T018 & --- \\
+$\bar e_\theta$ & ego heading error & 0.05\,rad & assumption (current config) & --- \\
+$b_e$ & fallback braking & 4\,m/s$^2$ & minimum-risk manoeuvre \cite{unr157} & --- \\
+$\Delta_{\mathrm{sw}}$ & switch latency & 0.1\,s & assumption & --- \\
+\midrule
+$\varepsilon_p$ & position estimate & 0.3\,m & assumption (current config) & parked RMS p95 0.35\,m \\
+$\varepsilon_v$ & speed estimate & 0.5\,m/s & assumption (current config) & T009 p95 0.47--0.72 \\
+$\varepsilon_\psi$ & heading estimate & 0.05\,rad & assumption; 0 with a lane map & parked yaw p95 0.05\,rad \\
+\midrule
+\multicolumn{5}{l}{\emph{Physical set}} \\
+$b_{\max}$ & braking & 10\,m/s$^2$ & ABS, dry road 8.5--10.6 \cite{miller2023} & min $-7.2$ (1\,s) \\
+$a_{\max}$ & acceleration & 5\,m/s$^2$ & observed max 4.43 \cite{bosetti2014} & max 4.6 (1\,s) \\
+$a_\perp$ & lateral acceleration & 10\,m/s$^2$ & tyre friction, as $b_{\max}$ & --- \\
+$\kappa_{\max}$ & curvature & 0.2\,m$^{-1}$ & assumption (5\,m radius) & p99 0.11 \\
+$a_p$, $v_{p,\max}$ & pedestrian & 6.5\,m/s$^2$, 9.5\,m/s & sprinters \cite{diprampero2005} & max 2.6\,m/s \\
+\midrule
+\multicolumn{5}{l}{\emph{Foreseeable set}} \\
+$b_{\max}$ & braking & 10\,m/s$^2$ & a lead may brake fully \cite{unr157} & --- \\
+$a_{\max}$ & acceleration & 3.5\,m/s$^2$ & RSS $a_{\max,\mathrm{accel}}$ \cite{adrsslib} & --- \\
+lateral & RSS response & $\rho_o=2$\,s, 0.2 / 0.8\,m/s$^2$, $\mu=0.1$\,m & \cite{rss2017,adrsslib}; alternatives in Section~\ref{sec:objects} & --- \\
+$a_\perp(v)$ & turning (option T) & $5.22/\sqrt{1+(v/14.84)^4}$ & normal-driving envelope \cite{bosetti2014} & --- \\
+$v_{\mathrm{turn}}$ & option T threshold & 5\,m/s & assumption & --- \\
+$a_p$, $v_{p,\max}$ & pedestrian & 0.6\,m/s$^2$, 2.0\,m/s & \cite{koschi2018}; crossing $\le$5\,km/h \cite{unr157} & p99 1.7\,m/s \\
+\bottomrule
+\end{tabular}
+\caption{Parameters. No value is fitted to our clips; the last column only shows that none is wildly off.}
+\label{tab:params}
+\end{table}
+
+%======================================================================
+\section{What this changes in the pipeline (proposal)}\label{sec:pipeline}
+Nothing below is implemented yet; each item would be its own ticket.
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{New solver \texttt{method: boxes}} in the runner's registry: Lemmas
+    \ref{lem:ego}--\ref{lem:rot}, Propositions~\ref{prop:veh}--\ref{prop:ped} with the two parameter sets,
+    and $\Hc$. This alone removes most $H=0$ plans (Problem 1).
+  \item \textbf{Reaction horizon} $\Hr$ in the solver, with the responsibility switches, and an amendment to
+    T023: the deadline uses $\Hr$.
+  \item \textbf{Safety check} (T015): the same boxes; besides ``contact before $\Hc$'', the fallback
+    $F_{\Hr}$ against the true future; the per-object, per-assumption violation record of
+    Section~\ref{sec:validation}; rear-end contacts and contacts at rest labelled.
+  \item \textbf{T019 rewritten} as ``how often does each assumption hold?'' instead of ``which values cover the
+    data?''.
+\end{enumerate}
+
+\paragraph{Decisions for Ralph.}
+\begin{enumerate}[label=D\arabic*.,leftmargin=*]
+  \item The deadline: $\Hc$ or $\Hr$ (recommended: $\Hr$, Problem 4).
+  \item The foreseeable lateral assumption: RSS response (recommended, the only one with an end to the
+    sideways motion), IEEE 2846-style bounds, lane change, or cut-in (Table~\ref{tab:e1}).
+  \item The responsibility rules (A1)--(A3), and options T (turning) and Y (yielding).
+  \item The heading-estimate error $\varepsilon_\psi$: a perception requirement, or a lane map to remove it.
+  \item The fallback braking $b_e$ and the switch latency $\Delta_{\mathrm{sw}}$.
+  \item The ego tube $\rho_p$, $\bar e_\theta$ (no data until a controller exists).
+\end{enumerate}
+
+%======================================================================
+\section{Limitations}\label{sec:limits}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Labels as truth.} The safety check uses the auto-labels; their artefacts (jumps of several
+    metres) will show up as assumption violations and must be told apart.
+  \item \textbf{Objects do not react} in the replay; a plan that brakes harder than the real car can be
+    ``rear-ended'' (handled by (A2) and reported separately).
+  \item \textbf{No map.} Lane geometry is the strongest constraint on other vehicles: set-based
+    prediction keeps them on the road and in lanes they may legally use (constraint C5 of
+    \cite{althoff2016}, implemented in SPOT \cite{koschi2017}). Without it, the heading line stands in for the
+    lane, which is why $\varepsilon_\psi$ matters so much (E1), and turning vehicles cannot be anticipated
+    where they actually turn.
+  \item \textbf{Unknown objects} (not yet seen, occluded) are outside the guarantee by construction.
+  \item \textbf{Few clips.} Five clips can reveal that an assumption is violated often, but cannot show that
+    it is violated rarely: with $n$ independent plans and no violation, the bound is only about $3/n$.
+\end{itemize}
+
+%======================================================================
+\appendix
+\section{How the diagnosis numbers were computed}\label{app:data}
+\texttt{scripts/spike\_t024\_object\_motion.py}, offline scenes of the five clips, objects with
+\texttt{in\_scene} at $t$ and a known velocity; futures from the same track at tick $t+10\tau$.
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Residuals:} $r=c(t+\tau)-\hat c-\hat w\tau$ (full velocity) or $-\hat v u\tau$
+    (heading-projected), split along $u$ and $n$ at $t$.
+  \item \textbf{Box overhangs:} how far the true box's corners at $t+\tau$ stick out of the
+    heading-projected nominal box, at the front, back and side.
+  \item \textbf{1\,s chords} (robust to label noise): $c_1=c(t+1)-c(t)$, $c_2=c(t+2)-c(t+1)$; longitudinal
+    acceleration $\|c_2\|-\|c_1\|$, heading change $\angle(c_1,c_2)$.
+  \item \textbf{Label noise:} tracks that look parked (T009's rule): RMS distance from their mean position
+    and RMS yaw about their mean.
+  \item \textbf{$H=0$ plans:} from \texttt{results/t014-baseline} (T014), the ego footprint and the
+    limiting object's box at the plan's tick; exact rectangle distance.
+\end{itemize}
+
+\begin{thebibliography}{99}\small
+\bibitem{rss2017} S.~Shalev-Shwartz, S.~Shammah, A.~Shashua. On a formal model of safe and scalable self-driving cars. arXiv:1708.06374v6, 2017. (Longitudinal: Lemma~2; lateral: Def.~6, Lemma~4.)
+\bibitem{adrsslib} Intel Corporation. ad-rss-lib: parameter discussion. \url{https://intel.github.io/ad-rss-lib/ad_rss/Appendix-ParameterDiscussion/} (accessed November 2026). Values given as ``only suggestions and open for discussion''.
+\bibitem{ieee2846} IEEE Standard for Assumptions in Safety-Related Models for Automated Driving Systems. IEEE Std 2846-2022. doi:10.1109/IEEESTD.2022.9761121.
+\bibitem{certad2023} N.~Certad, S.~Tschernuth, C.~Olaverri-Monreal. Extraction of road users' behavior from realistic data according to assumptions in safety-related models for automated driving systems. \emph{IEEE ITSC}, 2145--2150, 2023. doi:10.1109/ITSC57777.2023.10422421.
+\bibitem{althoff2016} M.~Althoff, S.~Magdici. Set-based prediction of traffic participants on arbitrary road networks. \emph{IEEE Transactions on Intelligent Vehicles}, 1(2):187--202, 2016. doi:10.1109/TIV.2016.2622920.
+\bibitem{koschi2017} M.~Koschi, M.~Althoff. SPOT: a tool for set-based prediction of traffic participants. \emph{IEEE Intelligent Vehicles Symposium}, 1686--1693, 2017. doi:10.1109/IVS.2017.7995951.
+\bibitem{koschi2018} M.~Koschi, C.~Pek, M.~Beikirch, M.~Althoff. Set-based prediction of pedestrians in urban environments considering formalized traffic rules. \emph{IEEE ITSC}, 2704--2711, 2018. doi:10.1109/ITSC.2018.8569434.
+\bibitem{pek2020} C.~Pek, S.~Manzinger, M.~Koschi, M.~Althoff. Using online verification to prevent autonomous vehicles from causing accidents. \emph{Nature Machine Intelligence}, 2(9):518--528, 2020. doi:10.1038/s42256-020-0225-y.
+\bibitem{pek2021} C.~Pek, M.~Althoff. Fail-safe motion planning for online verification of autonomous vehicles using convex optimization. \emph{IEEE Transactions on Robotics}, 37(3):798--814, 2021. doi:10.1109/TRO.2020.3036624.
+\bibitem{sontges2018} S.~S\"ontges, M.~Koschi, M.~Althoff. Worst-case analysis of the time-to-react using reachable sets. \emph{IEEE Intelligent Vehicles Symposium}, 1891--1897, 2018. doi:10.1109/IVS.2018.8500709.
+\bibitem{hillenbrand2006} J.~Hillenbrand, A.~M.~Spieker, K.~Kroschel. A multilevel collision mitigation approach---its situation assessment, decision making, and performance tradeoffs. \emph{IEEE Transactions on Intelligent Transportation Systems}, 7(4):528--540, 2006. doi:10.1109/TITS.2006.883115. (Time-to-react, as credited by \cite{sontges2018}.)
+\bibitem{tamke2011} A.~Tamke, T.~Dang, G.~Breuel. A flexible method for criticality assessment in driver assistance systems. \emph{IEEE Intelligent Vehicles Symposium}, 697--702, 2011. doi:10.1109/IVS.2011.5940482.
+\bibitem{macek2009} K.~Ma\v{c}ek, D.~Vasquez, T.~Fraichard, R.~Siegwart. Towards safe vehicle navigation in dynamic urban scenarios. \emph{Automatika}, 50(3--4):184--194, 2009.
+\bibitem{bouraine2012} S.~Bouraine, T.~Fraichard, H.~Salhi. Provably safe navigation for mobile robots with limited field-of-views in dynamic environments. \emph{Autonomous Robots}, 32(3):267--283, 2012. doi:10.1007/s10514-011-9258-8.
+\bibitem{ziegler2010} J.~Ziegler, C.~Stiller. Fast collision checking for intelligent vehicle motion planning. \emph{IEEE Intelligent Vehicles Symposium}, 518--522, 2010. doi:10.1109/IVS.2010.5547976.
+\bibitem{tolksdorf2024} L.~Tolksdorf, C.~Birkner, A.~Tejada, N.~van~de~Wouw. Fast collision probability estimation for automated driving using multi-circular shape approximations. \emph{IEEE Intelligent Vehicles Symposium}, 2024. arXiv:2405.10765.
+\bibitem{gilbert1988} E.~G.~Gilbert, D.~W.~Johnson, S.~S.~Keerthi. A fast procedure for computing the distance between complex objects in three-dimensional space. \emph{IEEE Journal on Robotics and Automation}, 4(2):193--203, 1988. doi:10.1109/56.2083.
+\bibitem{gottschalk1996} S.~Gottschalk, M.~C.~Lin, D.~Manocha. OBBTree: a hierarchical structure for rapid interference detection. \emph{SIGGRAPH '96}, 171--180, 1996. doi:10.1145/237170.237244.
+\bibitem{mayne2005} D.~Q.~Mayne, M.~M.~Seron, S.~V.~Rakovi\'c. Robust model predictive control of constrained linear systems with bounded disturbances. \emph{Automatica}, 41(2):219--224, 2005. doi:10.1016/j.automatica.2004.08.019.
+\bibitem{vovk2005} V.~Vovk, A.~Gammerman, G.~Shafer. \emph{Algorithmic Learning in a Random World}. Springer, 2005. doi:10.1007/b106715.
+\bibitem{angelopoulos2023} A.~N.~Angelopoulos, S.~Bates. Conformal prediction: a gentle introduction. \emph{Foundations and Trends in Machine Learning}, 16(4):494--591, 2023. doi:10.1561/2200000101. Preprint arXiv:2107.07511.
+\bibitem{stankeviciute2021} K.~Stankevi\v{c}i\={u}t\.{e}, A.~M.~Alaa, M.~van~der~Schaar. Conformal time-series forecasting. \emph{Advances in Neural Information Processing Systems}, 34:6216--6228, 2021.
+\bibitem{lindemann2023} L.~Lindemann, M.~Cleaveland, G.~Shim, G.~J.~Pappas. Safe planning in dynamic environments using conformal prediction. \emph{IEEE Robotics and Automation Letters}, 8(8):5116--5123, 2023. doi:10.1109/LRA.2023.3292071.
+\bibitem{hanley1983} J.~A.~Hanley, A.~Lippman-Hand. If nothing goes wrong, is everything all right? Interpreting zero numerators. \emph{JAMA}, 249(13):1743--1745, 1983. doi:10.1001/jama.1983.03330370053031.
+\bibitem{miller2023} I.~Miller, D.~King, C.~Wilkinson, G.~P.~Siegmund. Decelerations for vehicles with anti-lock brake systems (ABS) on dry asphalt and concrete road surfaces. SAE Technical Paper 2023-01-0616, 2023. doi:10.4271/2023-01-0616.
+\bibitem{bosetti2014} P.~Bosetti, M.~Da~Lio, A.~Saroldi. On the human control of vehicles: an experimental study of acceleration. \emph{European Transport Research Review}, 6(2):157--170, 2014. doi:10.1007/s12544-013-0120-2. (Lateral envelope: Eq.~1; longitudinal: Table~4.)
+\bibitem{diprampero2005} P.~E.~di~Prampero, S.~Fusi, L.~Sepulcri, J.~B.~Morin, A.~Belli, G.~Antonutto. Sprint running: a new energetic approach. \emph{Journal of Experimental Biology}, 208(14):2809--2816, 2005. doi:10.1242/jeb.01700.
+\bibitem{toledo2007} T.~Toledo, D.~Zohar. Modeling duration of lane changes. \emph{Transportation Research Record}, 1999:71--78, 2007. doi:10.3141/1999-08.
+\bibitem{unr79} UNECE. UN Regulation No.~79 --- Steering equipment (03 series). E/ECE/TRANS/505/Rev.1/Add.78/Rev.3/Amend.2, 2018. (Automated lane change: \S5.6.4.)
+\bibitem{unr157} UNECE. UN Regulation No.~157 --- Automated Lane Keeping Systems. E/ECE/TRANS/505/Rev.3/Add.156/Amend.1, 2022. (Lead braking \S5.2.5.1; cut-in \S5.2.5.2 and Annex~3; pedestrians \S5.2.5.3; minimum-risk manoeuvre \S5.5.1.)
+\end{thebibliography}
+
+\end{document}

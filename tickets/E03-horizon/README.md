@@ -112,3 +112,4 @@ comparable with Alpamayo's.
 | T018 | Decision | What the truth check validates | done |
 | T019 | Experiment | Do the object bounds hold on our scenes? | todo |
 | T023 | Decision | What H means: once per plan on receipt, checked against the true future | done |
+| T024 | Spike | A revised derivation of H | review |
